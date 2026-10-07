@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
+import { requireUser } from "@/lib/auth";
 import {
   isValidModelId,
   modelPath,
 } from "@/lib/replicate-model";
 
 export async function GET(request: Request) {
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+
   try {
     const { searchParams } = new URL(request.url);
     const model = searchParams.get("model");

@@ -32,6 +32,11 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# user accounts (password hashes)
+/data/users.json
+/data/users.json.*.tmp
 
 # vercel
 .vercel

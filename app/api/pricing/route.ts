@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireUser } from "@/lib/auth";
 import {
   getPricingSnapshots,
   getTodayPricing,
@@ -7,6 +8,9 @@ import {
 } from "@/lib/replicate-pricing";
 
 export async function GET() {
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+
   try {
     const today = getTodayPricing();
 
@@ -26,6 +30,13 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  // Pricing affects everyone's cost reports
+  const auth = await requireUser([
+    "super_admin",
+    "admin",
+  ]);
+  if (auth.response) return auth.response;
+
   try {
     const body = (await request.json()) as PricingSnapshot;
 

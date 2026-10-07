@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -63,6 +64,9 @@ async function fetchAllowedOutput(
 }
 
 export async function GET(request: Request) {
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+
   try {
     const { searchParams } = new URL(request.url);
     const requestedUrl = searchParams.get("url");

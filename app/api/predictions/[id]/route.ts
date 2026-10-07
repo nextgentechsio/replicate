@@ -1,5 +1,6 @@
 import { calculateReplicateCost } from "@/lib/replicate-cost";
 import { NextResponse } from "next/server";
+import { requireUser } from "@/lib/auth";
 import fs from "fs/promises";
 import path from "path";
 
@@ -107,6 +108,9 @@ export async function GET(
   request: Request,
   context: RouteContext
 ) {
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+
   try {
     const { id } = await context.params;
 

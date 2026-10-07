@@ -1,0 +1,107 @@
+// --------------------------------------------------
+// ROLES & PERMISSIONS
+//
+// Pure functions only, so both the server (authoritative)
+// and the client (to hide controls) can import this.
+//
+// super_admin: exactly one, stored in MongoDB (seeded
+//              from .env.local on first start); manages
+//              all admins and users
+// admin:       manages accounts with the "user" role
+// user:        manages no one
+// --------------------------------------------------
+
+export const ROLES = [
+  "super_admin",
+  "admin",
+  "user",
+] as const;
+
+export type Role = (typeof ROLES)[number];
+
+export const ROLE_LABELS: Record<Role, string> = {
+  super_admin: "Super Admin",
+  admin: "Admin",
+  user: "User",
+};
+
+export type PublicUser = {
+  id: string;
+  username: string;
+  name: string;
+  role: Role;
+  disabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type Actor = Pick<PublicUser, "id" | "role" | "disabled">;
+type Target = Pick<PublicUser, "id" | "role">;
+
+export function isRole(value: unknown): value is Role {
+  return (
+    typeof value === "string" &&
+    (ROLES as readonly string[]).includes(value)
+  );
+}
+
+export function canManageUsers(actor: Actor): boolean {
+  return (
+    !actor.disabled &&
+    (actor.role === "super_admin" ||
+      actor.role === "admin")
+  );
+}
+
+export function canManageUser(
+  actor: Actor,
+  target: Target
+): boolean {
+  if (!canManageUsers(actor)) return false;
+
+  // The super admin edits only themselves (name and
+  // password), never another super admin
+  if (actor.role === "super_admin") {
+    return target.role !== "super_admin";
+  }
+
+  // admin
+  return target.role === "user";
+}
+
+export function canAssignRole(
+  actor: Actor,
+  role: Role
+): boolean {
+  if (!canManageUsers(actor)) return false;
+
+  // There is exactly one super admin, created from
+  // .env.local; the role can't be handed out in the app
+  if (role === "super_admin") return false;
+
+  if (actor.role === "super_admin") return true;
+
+  // admin
+  return role === "user";
+}
+
+// Projects: created and edited by the super admin only;
+// every signed-in user can pick from active projects.
+export function canManageProjects(actor: Actor): boolean {
+  return !actor.disabled && actor.role === "super_admin";
+}
+
+export type PublicProject = {
+  id: string;
+  name: string;
+  description: string;
+  status: "active" | "archived";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function assignableRoles(actor: Actor): Role[] {
+  return ROLES.filter((role) =>
+    canAssignRole(actor, role)
+  );
+}

@@ -1,6 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import ManagementPage from "@/app/components/ManagementPage";
+import {
+  canManageProjects,
+  canManageUsers,
+  ROLE_LABELS,
+  type PublicProject,
+  type PublicUser,
+} from "@/lib/roles";
 
 type Model = {
   id: string;
@@ -29,6 +37,8 @@ type HistoryRecord = {
   id: string;
   predictionId: string;
   user: string;
+  // Missing on records created before accounts existed
+  userId?: string;
   project: string;
   model: string;
   prompt: string;
@@ -80,23 +90,9 @@ type Page =
   | "expenses"
   | "projects"
   | "models"
+  | "users"
   | "settings";
 
-const users = [
-  "Sabina",
-  "Som",
-  "Suriya",
-  "Mohammed",
-  "Anto",
-];
-
-const projects = [
-  "Landmark",
-  "NAAR",
-  "BFI",
-  "AAdai",
-  "Internal",
-];
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 15 * 60 * 1000;
@@ -149,8 +145,30 @@ function StableTextArea({
 export default function Home() {
   const [page, setPage] = useState<Page>("generate");
 
-  const [user, setUser] = useState("Sabina");
-  const [project, setProject] = useState("Landmark");
+  const [currentUser, setCurrentUser] =
+    useState<PublicUser | null>(null);
+
+  // Display name of the signed-in account; the server
+  // attributes generations from the session, not this.
+  const user = currentUser?.name ?? "";
+  const isManager = currentUser
+    ? canManageUsers(currentUser)
+    : false;
+
+  // Active projects from MongoDB (managed by the super admin)
+  const [projectList, setProjectList] = useState<
+    PublicProject[]
+  >([]);
+  const projects = projectList.map((item) => item.name);
+
+  const [selectedProject, setProject] = useState("");
+
+  // Starts blank so the user must pick a project. Also
+  // resets to blank if the chosen project is archived or
+  // renamed meanwhile.
+  const project = projects.includes(selectedProject)
+    ? selectedProject
+    : "";
 
   const [search, setSearch] = useState("");
   const [models, setModels] = useState<Model[]>([]);
@@ -191,6 +209,85 @@ const [filePreviews, setFilePreviews] =
 
   const activePredictionRef =
     useRef<string | null>(null);
+
+  // --------------------------------------------------
+  // CURRENT USER
+  // --------------------------------------------------
+
+  useEffect(() => {
+    async function loadCurrentUser() {
+      try {
+        const response = await fetch("/api/auth/me", {
+          cache: "no-store",
+        });
+
+        if (response.status === 401) {
+          window.location.assign("/login");
+          return;
+        }
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.error || "Unable to load account"
+          );
+        }
+
+        setCurrentUser(data.user);
+      } catch (err) {
+        console.error(err);
+        setError("Unable to load your account.");
+      }
+    }
+
+    loadCurrentUser();
+  }, []);
+
+  // --------------------------------------------------
+  // PROJECTS
+  // --------------------------------------------------
+
+  function fetchActiveProjects(): Promise<PublicProject[]> {
+    return fetch("/api/projects", { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.error || "Unable to load projects"
+          );
+        }
+
+        return (data.projects as PublicProject[]) ?? [];
+      });
+  }
+
+  // Called after the super admin edits projects
+  function refreshProjects() {
+    fetchActiveProjects()
+      .then(setProjectList)
+      .catch((err) => console.error(err));
+  }
+
+  useEffect(() => {
+    fetchActiveProjects()
+      .then(setProjectList)
+      .catch((err) => {
+        console.error(err);
+        setError("Unable to load projects.");
+      });
+  }, []);
+
+  async function handleLogout() {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+      });
+    } finally {
+      window.location.assign("/login");
+    }
+  }
 
   // --------------------------------------------------
   // HISTORY LOAD
@@ -240,6 +337,26 @@ const [filePreviews, setFilePreviews] =
       );
     }
   }, [history, historyLoaded]);
+
+  // --------------------------------------------------
+  // VISIBLE HISTORY
+  //
+  // History lives in this browser's localStorage, which
+  // may be shared by several accounts. Plain users only
+  // see their own records; admins see everything here.
+  // --------------------------------------------------
+
+  const visibleHistory = useMemo(() => {
+    if (!currentUser) return [];
+
+    if (canManageUsers(currentUser)) return history;
+
+    return history.filter((item) =>
+      item.userId
+        ? item.userId === currentUser.id
+        : item.user === currentUser.name
+    );
+  }, [history, currentUser]);
 
   // --------------------------------------------------
   // HELPERS
@@ -361,6 +478,7 @@ function getInputImage(): string | null {    const value = inputs.image_input;
       id: crypto.randomUUID(),
       predictionId,
       user,
+      userId: currentUser?.id,
       project,
       model,
       prompt: String(inputs.prompt ?? ""),
@@ -1737,23 +1855,23 @@ function getSpend(records: HistoryRecord[]): number {
 }
   function Dashboard() {
     const total =
-      history.length;
+      visibleHistory.length;
 
     const successful =
-      history.filter(
+      visibleHistory.filter(
         (item) =>
           item.status ===
           "succeeded"
       ).length;
 
     const totalSpend =
-      getSpend(history);
+      getSpend(visibleHistory);
 
     const todayKey =
       new Date().toDateString();
 
     const todaySpendRecords =
-      history.filter(
+      visibleHistory.filter(
         (item) =>
           new Date(
             item.createdAt
@@ -1768,14 +1886,14 @@ function getSpend(records: HistoryRecord[]): number {
         (name) => ({
           name,
           count:
-            history.filter(
+            visibleHistory.filter(
               (item) =>
                 item.project ===
                 name
             ).length,
           cost:
             getSpend(
-              history.filter(
+              visibleHistory.filter(
                 (item) =>
                   item.project ===
                   name
@@ -1859,7 +1977,7 @@ function getSpend(records: HistoryRecord[]): number {
             </h2>
 
             <div className="mt-5 space-y-3">
-              {history
+              {visibleHistory
                 .slice(
                   0,
                   5
@@ -1904,7 +2022,7 @@ function getSpend(records: HistoryRecord[]): number {
                   )
                 )}
 
-              {!history.length && (
+              {!visibleHistory.length && (
                 <p className="rounded-xl border border-dashed border-zinc-800 p-8 text-center text-sm text-zinc-600">
                   No
                   generation
@@ -1983,14 +2101,14 @@ function getSpend(records: HistoryRecord[]): number {
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/70">
-          {!history.length ? (
+          {!visibleHistory.length ? (
             <div className="p-12 text-center text-sm text-zinc-600">
               No generation
               history yet.
             </div>
           ) : (
             <div className="divide-y divide-zinc-800">
-              {history.map(
+              {visibleHistory.map(
                 (item) => (
                   <div
                     key={
@@ -2116,7 +2234,7 @@ function getSpend(records: HistoryRecord[]): number {
       now.getFullYear();
 
     const monthRecords =
-      history.filter(
+      visibleHistory.filter(
         (item) => {
           const date =
             new Date(
@@ -2144,7 +2262,7 @@ function getSpend(records: HistoryRecord[]): number {
     );
 
     const weekRecords =
-      history.filter(
+      visibleHistory.filter(
         (item) =>
           new Date(
             item.createdAt
@@ -2156,7 +2274,7 @@ function getSpend(records: HistoryRecord[]): number {
       getSpend(weekRecords);
 
     const todayRecords =
-      history.filter(
+      visibleHistory.filter(
         (item) =>
           new Date(
             item.createdAt
@@ -2226,14 +2344,14 @@ function getSpend(records: HistoryRecord[]): number {
             history
           </div>
 
-          {!history.length ? (
+          {!visibleHistory.length ? (
             <div className="p-10 text-center text-sm text-zinc-600">
               No expenses
               yet.
             </div>
           ) : (
             <div className="divide-y divide-zinc-800">
-              {history.map(
+              {visibleHistory.map(
                 (item) => (
                   <div
                     key={
@@ -2326,7 +2444,7 @@ function getSpend(records: HistoryRecord[]): number {
 
                 <p className="mt-1 text-xs text-zinc-600">
                   {
-                    history.filter(
+                    visibleHistory.filter(
                       (
                         entry
                       ) =>
@@ -2425,44 +2543,45 @@ function getSpend(records: HistoryRecord[]): number {
           </h1>
 
           <p className="mt-1 text-sm text-zinc-500">
-            Workspace
-            preferences.
+            Your account.
           </p>
         </div>
 
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-6">
-          <label className="text-sm text-zinc-300">
-            Default user
-          </label>
+        <div className="grid max-w-xl gap-4 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-6 sm:grid-cols-3">
+          {[
+            ["Name", currentUser?.name ?? "—"],
+            [
+              "Username",
+              currentUser
+                ? `@${currentUser.username}`
+                : "—",
+            ],
+            [
+              "Role",
+              currentUser
+                ? ROLE_LABELS[currentUser.role]
+                : "—",
+            ],
+          ].map(([title, value]) => (
+            <div key={title}>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+                {title}
+              </p>
 
-          <select
-            value={user}
-            onChange={(
-              event
-            ) =>
-              setUser(
-                event.target
-                  .value
-              )
-            }
-            className="mt-2 h-11 w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm outline-none"
-          >
-            {users.map(
-              (item) => (
-                <option
-                  key={
-                    item
-                  }
-                  value={
-                    item
-                  }
-                >
-                  {item}
-                </option>
-              )
-            )}
-          </select>
+              <p className="mt-1 text-sm text-zinc-300">
+                {value}
+              </p>
+            </div>
+          ))}
         </div>
+
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="rounded-xl border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
+        >
+          Sign out
+        </button>
       </div>
     );
   }
@@ -2517,38 +2636,10 @@ function getSpend(records: HistoryRecord[]): number {
                   User
                 </label>
 
-                <select
-                  value={
-                    user
-                  }
-                  onChange={(
-                    event
-                  ) =>
-                    setUser(
-                      event
-                        .target
-                        .value
-                    )
-                  }
-                  className="mt-3 h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm outline-none focus:border-zinc-500"
-                >
-                  {users.map(
-                    (
-                      item
-                    ) => (
-                      <option
-                        key={
-                          item
-                        }
-                        value={
-                          item
-                        }
-                      >
-                        {item}
-                      </option>
-                    )
-                  )}
-                </select>
+                {/* Always the signed-in account */}
+                <div className="mt-3 flex h-11 w-full items-center rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-300">
+                  {user || "—"}
+                </div>
               </div>
 
               <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5">
@@ -2569,8 +2660,14 @@ function getSpend(records: HistoryRecord[]): number {
                         .value
                     )
                   }
-                  className="mt-3 h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm outline-none focus:border-zinc-500"
+                  className={`mt-3 h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm outline-none focus:border-zinc-500 ${
+                    project ? "" : "text-zinc-500"
+                  }`}
                 >
+                  <option value="" disabled>
+                    Select project
+                  </option>
+
                   {projects.map(
                     (
                       item
@@ -2588,6 +2685,15 @@ function getSpend(records: HistoryRecord[]): number {
                     )
                   )}
                 </select>
+
+                {!projects.length && (
+                  <p className="mt-2 text-xs text-zinc-600">
+                    {currentUser &&
+                    canManageProjects(currentUser)
+                      ? "No projects yet. Create one in Users & Projects."
+                      : "No projects yet. Ask your super admin to create one."}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -3344,6 +3450,18 @@ function getSpend(records: HistoryRecord[]): number {
       label: "Models",
       icon: "◇",
     },
+    ...(isManager
+      ? [
+          {
+            id: "users" as Page,
+            label:
+              currentUser && canManageProjects(currentUser)
+                ? "Users & Projects"
+                : "Users",
+            icon: "◎",
+          },
+        ]
+      : []),
     {
       id: "settings" as Page,
       label: "Settings",
@@ -3374,6 +3492,16 @@ function getSpend(records: HistoryRecord[]): number {
 
       case "models":
         return ModelsPage();
+
+      case "users":
+        return currentUser && isManager ? (
+          <ManagementPage
+            currentUser={currentUser}
+            onProjectsChanged={refreshProjects}
+          />
+        ) : (
+          GeneratePage()
+        );
 
       case "settings":
         return Settings();
@@ -3417,6 +3545,11 @@ function getSpend(records: HistoryRecord[]): number {
 
               <p className="text-xs text-zinc-300">
                 {user}
+                {currentUser && (
+                  <span className="ml-2 text-[10px] text-zinc-500">
+                    {ROLE_LABELS[currentUser.role]}
+                  </span>
+                )}
               </p>
             </div>
 
@@ -3425,6 +3558,14 @@ function getSpend(records: HistoryRecord[]): number {
                 0
               )}
             </div>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-white"
+            >
+              Sign out
+            </button>
           </div>
         </div>
       </header>

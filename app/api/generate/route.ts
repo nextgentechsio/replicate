@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { requireUser } from "@/lib/auth";
+import { findActiveProjectByName } from "@/lib/projects";
 import { calculateReplicateCost } from "@/lib/replicate-cost";
 import {
   isValidModelId,
@@ -136,33 +138,44 @@ function normalizeInputs(
 }
 
 export async function POST(request: Request) {
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+
   try {
     const body = await request.json();
 
     const {
-      user,
       project,
       model,
       inputs,
     } = body;
 
+    // Attribute spend to the signed-in account, never
+    // to a name supplied by the client.
+    const user = auth.user.name;
+    const userId = auth.user.id;
+
     // --------------------------------------------------
     // VALIDATION
     // --------------------------------------------------
-
-    if (!user) {
-      return NextResponse.json(
-        {
-          error: "User is required",
-        },
-        { status: 400 }
-      );
-    }
 
     if (!project) {
       return NextResponse.json(
         {
           error: "Project is required",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Only active projects from the database can be billed
+    const projectRecord =
+      await findActiveProjectByName(project);
+
+    if (!projectRecord) {
+      return NextResponse.json(
+        {
+          error: "Unknown or archived project",
         },
         { status: 400 }
       );
@@ -368,7 +381,9 @@ export async function POST(request: Request) {
 
     const tracking = {
       user,
-      project,
+      userId,
+      project: projectRecord.name,
+      projectId: projectRecord.id,
 
       provider:
         "Replicate",
