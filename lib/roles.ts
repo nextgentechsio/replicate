@@ -96,6 +96,9 @@ export type PublicProject = {
   name: string;
   description: string;
   status: "active" | "archived";
+  // Versioned URL (changes when the photo does), or
+  // null when the project has no photo
+  imageUrl: string | null;
   createdAt: string;
   updatedAt: string;
 };

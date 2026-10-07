@@ -1,4 +1,10 @@
-import { MongoClient, type Collection, type Db } from "mongodb";
+import {
+  GridFSBucket,
+  MongoClient,
+  type Collection,
+  type Db,
+  type ObjectId,
+} from "mongodb";
 import type { Role } from "@/lib/roles";
 
 // --------------------------------------------------
@@ -23,6 +29,26 @@ export type UserDoc = {
 
 export type ProjectStatus = "active" | "archived";
 
+// Cover photo bytes live in the "projectImages" GridFS
+// bucket (not public/, which doesn't persist on
+// serverless hosts); the project keeps a pointer.
+export type ProjectImage = {
+  fileId: ObjectId;
+  contentType: ProjectImageType;
+  size: number;
+  updatedAt: Date;
+};
+
+export const PROJECT_IMAGE_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+] as const;
+
+export type ProjectImageType =
+  (typeof PROJECT_IMAGE_TYPES)[number];
+
 export type ProjectDoc = {
   _id: string;
   name: string;
@@ -30,6 +56,8 @@ export type ProjectDoc = {
   nameKey: string;
   description: string;
   status: ProjectStatus;
+  // Absent on projects created before photos existed
+  image?: ProjectImage | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -173,6 +201,12 @@ export async function expensesCollection(): Promise<
   Collection<ExpenseDoc>
 > {
   return (await getDb()).collection<ExpenseDoc>("expenses");
+}
+
+export async function projectImagesBucket(): Promise<GridFSBucket> {
+  return new GridFSBucket(await getDb(), {
+    bucketName: "projectImages",
+  });
 }
 
 export function isDuplicateKeyError(error: unknown): boolean {

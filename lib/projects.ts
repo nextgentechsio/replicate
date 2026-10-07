@@ -4,6 +4,10 @@ import {
   projectsCollection,
   type ProjectDoc,
 } from "@/lib/mongodb";
+import {
+  deleteProjectImageFile,
+  projectImageUrl,
+} from "@/lib/project-images";
 import type { PublicProject } from "@/lib/roles";
 
 // --------------------------------------------------
@@ -20,6 +24,7 @@ function toPublicProject(doc: ProjectDoc): PublicProject {
     name: doc.name,
     description: doc.description,
     status: doc.status,
+    imageUrl: projectImageUrl(doc),
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
   };
@@ -125,6 +130,7 @@ export async function createProject(
     nameKey: name.toLowerCase(),
     description,
     status: "active",
+    image: null,
     createdBy,
     createdAt: now,
     updatedAt: now,
@@ -221,6 +227,8 @@ export async function deleteProject(
   ).findOneAndDelete({ _id: id });
 
   if (!deleted) return fail(404, "Project not found");
+
+  await deleteProjectImageFile(deleted);
 
   return { ok: true, project: toPublicProject(deleted) };
 }

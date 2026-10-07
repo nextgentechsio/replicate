@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import ProjectAvatar from "@/app/components/ProjectAvatar";
+import { prepareProjectPhoto } from "@/lib/prepare-image";
 import type { PublicProject } from "@/lib/roles";
 
 // --------------------------------------------------
@@ -16,7 +18,19 @@ type FormState = {
   id?: string;
   name: string;
   description: string;
+  // Saved photo (edit mode), a newly picked one, or a
+  // request to remove the saved one
+  currentImageUrl: string | null;
+  photo: File | null;
+  photoPreview: string | null;
+  removePhoto: boolean;
 };
+
+const PHOTO_ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
+const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+// Before client-side downscaling; the 5 MB limit is
+// enforced on the prepared file and again by the server
+const PHOTO_PICK_MAX_BYTES = 25 * 1024 * 1024;
 
 const inputClass =
   "h-11 w-full rounded-xl border border-line bg-sunken px-3 text-sm outline-none focus:border-accent";
@@ -46,6 +60,33 @@ async function callApi(
   return data;
 }
 
+// Multipart upload: the browser sets the boundary, so
+// no Content-Type header here
+async function uploadPhoto(projectId: string, file: File) {
+  const prepared = await prepareProjectPhoto(file);
+
+  if (prepared.size > PHOTO_MAX_BYTES) {
+    throw new Error("Photo must be 5 MB or smaller");
+  }
+
+  const body = new FormData();
+  body.append("file", prepared, file.name);
+
+  const response = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/image`,
+    { method: "PUT", body }
+  );
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      (data as { error?: string }).error ||
+        `Photo upload failed (${response.status})`
+    );
+  }
+}
+
 export default function ProjectsAdmin({
   onProjectsChanged,
 }: {
@@ -58,6 +99,17 @@ export default function ProjectsAdmin({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [form, setForm] = useState<FormState | null>(null);
+  const photoInput = useRef<HTMLInputElement>(null);
+
+  // Free the preview's object URL when it's replaced or
+  // the form closes
+  const previewUrl = form?.photoPreview ?? null;
+
+  useEffect(() => {
+    if (!previewUrl) return;
+
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
 
   // `loading` starts true; reloads refresh in place
   const loadProjects = useCallback(async () => {
@@ -114,7 +166,15 @@ export default function ProjectsAdmin({
   function openCreate() {
     setError("");
     setNotice("");
-    setForm({ mode: "create", name: "", description: "" });
+    setForm({
+      mode: "create",
+      name: "",
+      description: "",
+      currentImageUrl: null,
+      photo: null,
+      photoPreview: null,
+      removePhoto: false,
+    });
   }
 
   function openEdit(project: PublicProject) {
@@ -125,6 +185,49 @@ export default function ProjectsAdmin({
       id: project.id,
       name: project.name,
       description: project.description,
+      currentImageUrl: project.imageUrl,
+      photo: null,
+      photoPreview: null,
+      removePhoto: false,
+    });
+  }
+
+  function pickPhoto(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    // Allow re-picking the same file after removing it
+    event.target.value = "";
+
+    if (!file || !form) return;
+
+    if (!PHOTO_ACCEPT.split(",").includes(file.type)) {
+      setError("Photo must be a PNG, JPEG, WebP or GIF image.");
+      return;
+    }
+
+    if (file.size > PHOTO_PICK_MAX_BYTES) {
+      setError("That photo is too large. Pick one under 25 MB.");
+      return;
+    }
+
+    setError("");
+    setForm({
+      ...form,
+      photo: file,
+      photoPreview: URL.createObjectURL(file),
+      removePhoto: false,
+    });
+  }
+
+  function clearPhoto() {
+    if (!form) return;
+
+    setForm({
+      ...form,
+      photo: null,
+      photoPreview: null,
+      // Only an already-saved photo needs a server call
+      removePhoto: Boolean(form.currentImageUrl),
     });
   }
 
@@ -139,15 +242,19 @@ export default function ProjectsAdmin({
     setNotice("");
     setSaving(true);
 
+    let projectId = form.id;
+
     try {
       if (form.mode === "create") {
-        await callApi("/api/projects", {
+        const data = await callApi("/api/projects", {
           method: "POST",
           body: JSON.stringify({
             name: form.name,
             description: form.description,
           }),
         });
+
+        projectId = (data.project as PublicProject).id;
       } else {
         await callApi(`/api/projects/${form.id}`, {
           method: "PATCH",
@@ -156,6 +263,26 @@ export default function ProjectsAdmin({
             description: form.description,
           }),
         });
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Save failed"
+      );
+      setSaving(false);
+      return;
+    }
+
+    // The project is saved at this point. A photo failure
+    // is reported, but the form switches to edit mode so a
+    // retry can't create a duplicate project.
+    try {
+      if (projectId && form.photo) {
+        await uploadPhoto(projectId, form.photo);
+      } else if (projectId && form.removePhoto) {
+        await callApi(
+          `/api/projects/${encodeURIComponent(projectId)}/image`,
+          { method: "DELETE" }
+        );
       }
 
       const message =
@@ -166,8 +293,14 @@ export default function ProjectsAdmin({
       setForm(null);
       await afterChange(message);
     } catch (err) {
+      setForm({ ...form, mode: "edit", id: projectId });
+      await afterChange("");
       setError(
-        err instanceof Error ? err.message : "Save failed"
+        `Saved ${form.name}, but the photo was not ${
+          form.photo ? "uploaded" : "removed"
+        }: ${
+          err instanceof Error ? err.message : "unknown error"
+        }`
       );
     } finally {
       setSaving(false);
@@ -264,6 +397,63 @@ export default function ProjectsAdmin({
               : `Edit ${form.name}`}
           </h2>
 
+          <div className="flex flex-wrap items-center gap-4">
+            <ProjectAvatar
+              name={form.name}
+              imageUrl={
+                form.photoPreview ??
+                (form.removePhoto ? null : form.currentImageUrl)
+              }
+              size={72}
+            />
+
+            <div className="space-y-2">
+              <p className="text-sm text-fg">
+                Photo (optional)
+              </p>
+
+              <div className="flex flex-wrap gap-2">
+                <input
+                  ref={photoInput}
+                  type="file"
+                  accept={PHOTO_ACCEPT}
+                  onChange={pickPhoto}
+                  className="sr-only"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => photoInput.current?.click()}
+                  className="rounded-lg border border-line-strong px-3 py-1.5 text-xs text-fg hover:bg-raised"
+                >
+                  {form.photoPreview ||
+                  (form.currentImageUrl && !form.removePhoto)
+                    ? "Change photo"
+                    : "Upload photo"}
+                </button>
+
+                {(form.photoPreview ||
+                  (form.currentImageUrl &&
+                    !form.removePhoto)) && (
+                  <button
+                    type="button"
+                    onClick={clearPhoto}
+                    className="rounded-lg border border-danger/40 px-3 py-1.5 text-xs text-danger hover:bg-danger/15"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+
+              <p className="text-xs text-fg-subtle">
+                PNG, JPEG, WebP or GIF. Large photos are
+                resized before upload.
+              </p>
+            </div>
+          </div>
+
           <div className="space-y-2">
             <label className="text-sm text-fg">
               Project name
@@ -337,14 +527,21 @@ export default function ProjectsAdmin({
                 key={project.id}
                 className="grid items-center gap-3 px-5 py-4 md:grid-cols-[1fr_100px_auto]"
               >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-fg">
-                    {project.name}
-                  </p>
+                <div className="flex min-w-0 items-center gap-3">
+                  <ProjectAvatar
+                    name={project.name}
+                    imageUrl={project.imageUrl}
+                  />
 
-                  <p className="mt-1 line-clamp-2 text-xs text-fg-subtle">
-                    {project.description || "No description"}
-                  </p>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-fg">
+                      {project.name}
+                    </p>
+
+                    <p className="mt-1 line-clamp-2 text-xs text-fg-subtle">
+                      {project.description || "No description"}
+                    </p>
+                  </div>
                 </div>
 
                 <span

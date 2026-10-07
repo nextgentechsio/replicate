@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import ManagementPage from "@/app/components/ManagementPage";
+import ProjectAvatar from "@/app/components/ProjectAvatar";
 import ThemeToggle from "@/app/components/ThemeToggle";
 import { Icon, type IconName } from "@/app/components/ui/Icon";
 import { NaarLogo } from "@/app/components/ui/NaarLogo";
@@ -2563,7 +2564,21 @@ const outputUrls =
                 done={Boolean(project)}
               />
 
-              <div className="mt-4 max-w-md">
+              <div className="mt-4 flex max-w-md items-start gap-3">
+                {/* Offset = Field label + gap, so it lines up
+                    with the select, not the hint below it */}
+                <ProjectAvatar
+                  name={project}
+                  imageUrl={
+                    projectList.find(
+                      (item) => item.name === project
+                    )?.imageUrl
+                  }
+                  size={40}
+                  className="mt-[26px]"
+                />
+
+                <div className="min-w-0 flex-1">
                 <Field label="Project" required hint={projectHint}>
                   {(control) => (
                     <select
@@ -2589,6 +2604,7 @@ const outputUrls =
                     </select>
                   )}
                 </Field>
+                </div>
               </div>
             </Card>
 
