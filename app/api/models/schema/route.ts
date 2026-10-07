@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import {
+  isValidModelId,
+  modelPath,
+} from "@/lib/replicate-model";
 
 export async function GET(request: Request) {
   try {
@@ -8,6 +12,13 @@ export async function GET(request: Request) {
     if (!model) {
       return NextResponse.json(
         { error: "Model is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!isValidModelId(model)) {
+      return NextResponse.json(
+        { error: "Invalid model ID" },
         { status: 400 }
       );
     }
@@ -22,7 +33,7 @@ export async function GET(request: Request) {
     }
 
     const response = await fetch(
-      `https://api.replicate.com/v1/models/${model}`,
+      `https://api.replicate.com/v1/models/${modelPath(model)}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,

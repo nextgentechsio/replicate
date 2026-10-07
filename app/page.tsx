@@ -98,6 +98,10 @@ const projects = [
   "Internal",
 ];
 
+const POLL_INTERVAL_MS = 2000;
+const POLL_TIMEOUT_MS = 15 * 60 * 1000;
+const MAX_CONSECUTIVE_POLL_ERRORS = 10;
+
 const ASPECT_RATIOS = [
   "match_input_image",
   "1:1",
@@ -1167,12 +1171,50 @@ setInputs((previous) => {
   async function pollPrediction(
     predictionId: string
   ) {
-    let attempts = 0;
+    // Stop eventually so a stuck or missing prediction
+    // doesn't hit the API every 2s forever.
+    const startedAt = Date.now();
+    let consecutiveErrors = 0;
 
+    function scheduleNext() {
+      if (
+        Date.now() - startedAt >
+        POLL_TIMEOUT_MS
+      ) {
+        stopPolling(
+          "Stopped checking: generation took longer than 15 minutes. Check Replicate for the final result."
+        );
+        return;
+      }
+
+      setTimeout(poll, POLL_INTERVAL_MS);
+    }
+
+    function handlePollError() {
+      consecutiveErrors++;
+
+      if (
+        consecutiveErrors >=
+        MAX_CONSECUTIVE_POLL_ERRORS
+      ) {
+        stopPolling(
+          "Stopped checking: the prediction status could not be fetched."
+        );
+        return;
+      }
+
+      scheduleNext();
+    }
+
+    function stopPolling(message: string) {
+      setError(message);
+
+      updateHistoryRecord(predictionId, {
+        status: "unknown",
+      });
+    }
 
     const poll = async () => {
-      attempts++;
-
       try {
         const response =
           await fetch(
@@ -1182,20 +1224,23 @@ setInputs((previous) => {
             }
           );
 
-       if (!response.ok) {
-  setTimeout(
-    poll,
-    2000
-  );
-
-  return;
-}
+        if (!response.ok) {
+          handlePollError();
+          return;
+        }
 
         const data =
           await response.json();
 
         const prediction =
           data.prediction;
+
+        if (!prediction) {
+          handlePollError();
+          return;
+        }
+
+        consecutiveErrors = 0;
 const outputUrls =
   getOutputUrls(
     prediction?.output
@@ -1261,20 +1306,14 @@ const outputUrls =
           return;
         }
 
-        setTimeout(
-  poll,
-  2000
-);
+        scheduleNext();
       } catch (err) {
         console.error(
           "Prediction polling error:",
           err
         );
 
-        setTimeout(
-  poll,
-  2000
-);
+        handlePollError();
       }
     };
 

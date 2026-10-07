@@ -2,6 +2,66 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+// --------------------------------------------------
+// ALLOWED SOURCES
+//
+// This route fetches server-side, so an open URL would
+// let callers reach internal hosts (SSRF). Only
+// Replicate's output CDN is allowed, and every redirect
+// hop is re-checked.
+// --------------------------------------------------
+
+const MAX_REDIRECTS = 3;
+
+function isAllowedOutputUrl(url: URL): boolean {
+  return (
+    url.protocol === "https:" &&
+    (url.hostname === "replicate.delivery" ||
+      url.hostname.endsWith(".replicate.delivery"))
+  );
+}
+
+function isReplicatePredictionUrl(url: URL): boolean {
+  return (
+    url.protocol === "https:" &&
+    url.hostname === "api.replicate.com" &&
+    url.pathname.startsWith("/v1/predictions/")
+  );
+}
+
+async function fetchAllowedOutput(
+  url: string
+): Promise<Response> {
+  let current = new URL(url);
+
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (!isAllowedOutputUrl(current)) {
+      throw new Error("Download source is not allowed");
+    }
+
+    const response = await fetch(current, {
+      method: "GET",
+      cache: "no-store",
+      redirect: "manual",
+    });
+
+    const location = response.headers.get("location");
+
+    if (
+      response.status >= 300 &&
+      response.status < 400 &&
+      location
+    ) {
+      current = new URL(location, current);
+      continue;
+    }
+
+    return response;
+  }
+
+  throw new Error("Too many redirects");
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -14,14 +74,23 @@ export async function GET(request: Request) {
       );
     }
 
-    const parsedUrl = new URL(requestedUrl);
+    let parsedUrl: URL;
 
-    if (
-      parsedUrl.protocol !== "https:" &&
-      parsedUrl.protocol !== "http:"
-    ) {
+    try {
+      parsedUrl = new URL(requestedUrl);
+    } catch {
       return NextResponse.json(
         { error: "Invalid URL" },
+        { status: 400 }
+      );
+    }
+
+    if (
+      !isAllowedOutputUrl(parsedUrl) &&
+      !isReplicatePredictionUrl(parsedUrl)
+    ) {
+      return NextResponse.json(
+        { error: "Download source is not allowed" },
         { status: 400 }
       );
     }
@@ -32,10 +101,7 @@ export async function GET(request: Request) {
     // REPLICATE PREDICTION URL
     // --------------------------------------------------
 
-    if (
-      parsedUrl.hostname === "api.replicate.com" &&
-      parsedUrl.pathname.startsWith("/v1/predictions/")
-    ) {
+    if (isReplicatePredictionUrl(parsedUrl)) {
       const token = process.env.REPLICATE_API_TOKEN;
 
       if (!token) {
@@ -49,13 +115,15 @@ export async function GET(request: Request) {
       }
 
       const predictionResponse = await fetch(
-        requestedUrl,
+        parsedUrl,
         {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`,
           },
           cache: "no-store",
+          // Never carry the token to another host
+          redirect: "error",
         }
       );
 
@@ -158,10 +226,21 @@ export async function GET(request: Request) {
 
     console.log("DOWNLOADING FILE:", fileUrl);
 
-    const response = await fetch(fileUrl, {
-      method: "GET",
-      cache: "no-store",
-    });
+    let response: Response;
+
+    try {
+      response = await fetchAllowedOutput(fileUrl);
+    } catch (fetchError) {
+      return NextResponse.json(
+        {
+          error:
+            fetchError instanceof Error
+              ? fetchError.message
+              : "Download source is not allowed",
+        },
+        { status: 400 }
+      );
+    }
 
     if (!response.ok) {
       console.error(

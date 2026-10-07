@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { calculateReplicateCost } from "@/lib/replicate-cost";
+import {
+  isValidModelId,
+  modelPath,
+} from "@/lib/replicate-model";
 
 export const runtime = "nodejs";
 
@@ -173,6 +177,15 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!isValidModelId(model)) {
+      return NextResponse.json(
+        {
+          error: "Invalid model ID",
+        },
+        { status: 400 }
+      );
+    }
+
     if (
       !inputs ||
       typeof inputs !== "object" ||
@@ -227,7 +240,7 @@ export async function POST(request: Request) {
     // --------------------------------------------------
 
     const modelResponse = await fetch(
-      `https://api.replicate.com/v1/models/${model}`,
+      `https://api.replicate.com/v1/models/${modelPath(model)}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -281,7 +294,7 @@ export async function POST(request: Request) {
     );
 
    const predictionResponse = await fetch(
-  `https://api.replicate.com/v1/models/${model}/predictions`,
+  `https://api.replicate.com/v1/models/${modelPath(model)}/predictions`,
   {
     method: "POST",
     headers: {
