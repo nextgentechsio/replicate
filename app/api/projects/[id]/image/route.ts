@@ -82,13 +82,13 @@ export async function GET(
 }
 
 // Upload or replace the photo: multipart form with a
-// single "file" field. Super admin only, like every
-// other project change.
+// single "file" field. Admins and the super admin, like
+// other project edits.
 export async function PUT(
   request: Request,
   context: RouteContext
 ) {
-  const auth = await requireUser(["super_admin"]);
+  const auth = await requireUser(["super_admin", "admin"]);
   if (auth.response) return auth.response;
 
   try {
@@ -142,7 +142,7 @@ export async function DELETE(
   _request: Request,
   context: RouteContext
 ) {
-  const auth = await requireUser(["super_admin"]);
+  const auth = await requireUser(["super_admin", "admin"]);
   if (auth.response) return auth.response;
 
   try {

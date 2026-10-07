@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 
 // Any signed-in user can list active projects (for the
 // Generate page). ?all=1 includes archived ones, for the
-// super admin only.
+// project managers (admins and the super admin) only.
 export async function GET(request: Request) {
   const auth = await requireUser();
   if (auth.response) return auth.response;
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireUser(["super_admin"]);
+  const auth = await requireUser(["super_admin", "admin"]);
   if (auth.response) return auth.response;
 
   try {

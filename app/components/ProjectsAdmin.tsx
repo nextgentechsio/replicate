@@ -6,7 +6,8 @@ import { prepareProjectPhoto } from "@/lib/prepare-image";
 import type { PublicProject } from "@/lib/roles";
 
 // --------------------------------------------------
-// PROJECT MANAGEMENT (super admin only)
+// PROJECT MANAGEMENT (admins and the super admin;
+// permanent delete is super admin only)
 //
 // Every action is re-checked by /api/projects.
 // Archived projects disappear from the Generate page
@@ -88,8 +89,11 @@ async function uploadPhoto(projectId: string, file: File) {
 }
 
 export default function ProjectsAdmin({
+  canDelete,
   onProjectsChanged,
 }: {
+  // Only the super admin sees the Delete button
+  canDelete: boolean;
   // Lets the parent refresh the Generate dropdown
   onProjectsChanged?: () => void;
 }) {
@@ -575,13 +579,15 @@ export default function ProjectsAdmin({
                       : "Restore"}
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => removeProject(project)}
-                    className="rounded-lg border border-danger/40 px-3 py-1.5 text-xs text-danger hover:bg-danger/15"
-                  >
-                    Delete
-                  </button>
+                  {canDelete && (
+                    <button
+                      type="button"
+                      onClick={() => removeProject(project)}
+                      className="rounded-lg border border-danger/40 px-3 py-1.5 text-xs text-danger hover:bg-danger/15"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

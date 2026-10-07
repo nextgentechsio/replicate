@@ -15,7 +15,8 @@ import type { PublicProject } from "@/lib/roles";
 //
 // Names are unique case-insensitively (nameKey index).
 // Permission checks live in the API routes: only the
-// super admin may call the mutations below.
+// admins and the super admin may call the mutations
+// below, and only the super admin may delete.
 // --------------------------------------------------
 
 function toPublicProject(doc: ProjectDoc): PublicProject {
@@ -98,7 +99,7 @@ export async function findActiveProjectByName(
 }
 
 // --------------------------------------------------
-// MUTATIONS (super admin only, enforced by routes)
+// MUTATIONS (permissions enforced by routes)
 // --------------------------------------------------
 
 export async function createProject(

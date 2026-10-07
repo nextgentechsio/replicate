@@ -355,7 +355,8 @@ export default function Home() {
     ? canManageUsers(currentUser)
     : false;
 
-  // Active projects from MongoDB (managed by the super admin)
+  // Active projects from MongoDB (managed by admins and
+  // the super admin)
   const [projectList, setProjectList] = useState<
     PublicProject[]
   >([]);
@@ -470,7 +471,7 @@ const [filePreviews, setFilePreviews] =
       });
   }
 
-  // Called after the super admin edits projects
+  // Called after an admin edits projects
   function refreshProjects() {
     fetchActiveProjects()
       .then(setProjectList)
@@ -2541,7 +2542,7 @@ const outputUrls =
     const projectHint = !projects.length
       ? currentUser && canManageProjects(currentUser)
         ? "No projects yet. Create one in Users & Projects."
-        : "No projects yet. Ask your super admin to create one."
+        : "No projects yet. Ask an admin to create one."
       : "Spend from this run is charged to the project.";
 
     return (

@@ -85,9 +85,19 @@ export function canAssignRole(
   return role === "user";
 }
 
-// Projects: created and edited by the super admin only;
-// every signed-in user can pick from active projects.
+// Projects: created, edited and archived by admins and
+// the super admin; every signed-in user can pick from
+// active projects.
 export function canManageProjects(actor: Actor): boolean {
+  return (
+    !actor.disabled &&
+    (actor.role === "super_admin" || actor.role === "admin")
+  );
+}
+
+// Permanent delete stays with the super admin (it can't
+// be undone; archiving is the everyday option).
+export function canDeleteProjects(actor: Actor): boolean {
   return !actor.disabled && actor.role === "super_admin";
 }
 

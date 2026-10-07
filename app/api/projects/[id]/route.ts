@@ -17,7 +17,7 @@ export async function PATCH(
   request: Request,
   context: RouteContext
 ) {
-  const auth = await requireUser(["super_admin"]);
+  const auth = await requireUser(["super_admin", "admin"]);
   if (auth.response) return auth.response;
 
   try {
@@ -52,6 +52,7 @@ export async function DELETE(
   _request: Request,
   context: RouteContext
 ) {
+  // Permanent delete: super admin only (admins archive)
   const auth = await requireUser(["super_admin"]);
   if (auth.response) return auth.response;
 

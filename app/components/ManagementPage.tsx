@@ -4,6 +4,7 @@ import { useState } from "react";
 import ProjectsAdmin from "@/app/components/ProjectsAdmin";
 import UsersAdmin from "@/app/components/UsersAdmin";
 import {
+  canDeleteProjects,
   canManageProjects,
   type PublicUser,
 } from "@/lib/roles";
@@ -11,8 +12,8 @@ import {
 // --------------------------------------------------
 // USER & PROJECT MANAGEMENT
 //
-// Super admin: Users + Projects tabs
-// Admin:       Users tab only
+// Super admin and admin: Users + Projects tabs
+// (only the super admin can delete a project)
 // --------------------------------------------------
 
 type Tab = "users" | "projects";
@@ -76,7 +77,10 @@ export default function ManagementPage({
       {activeTab === "users" ? (
         <UsersAdmin currentUser={currentUser} />
       ) : (
-        <ProjectsAdmin onProjectsChanged={onProjectsChanged} />
+        <ProjectsAdmin
+          canDelete={canDeleteProjects(currentUser)}
+          onProjectsChanged={onProjectsChanged}
+        />
       )}
     </div>
   );
