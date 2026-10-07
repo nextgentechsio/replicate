@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
+import { recordGeneration } from "@/lib/generations";
 import { findActiveProjectByName } from "@/lib/projects";
 import { calculateReplicateCost } from "@/lib/replicate-cost";
 import {
@@ -348,6 +349,35 @@ export async function POST(request: Request) {
             predictionResponse.status,
         }
       );
+    }
+
+    // --------------------------------------------------
+    // HISTORY (MongoDB)
+    //
+    // The prediction is already running (and billing) at
+    // this point, so a failed write must not fail the
+    // request — but it must be loud in the logs.
+    // --------------------------------------------------
+
+    if (predictionData?.id) {
+      try {
+        await recordGeneration({
+          predictionId: predictionData.id,
+          user: auth.user,
+          project: projectRecord,
+          model,
+          version: versionId,
+          inputs: normalizedInputs,
+          status: predictionData.status,
+          createdAt: predictionData.created_at,
+        });
+      } catch (historyError) {
+        console.error(
+          "FAILED TO RECORD GENERATION IN MONGODB:",
+          predictionData.id,
+          historyError
+        );
+      }
     }
 
     // --------------------------------------------------

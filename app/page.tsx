@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import ManagementPage from "@/app/components/ManagementPage";
+import type {
+  ExpenseReport,
+  SpendGroup,
+  SpendTotal,
+} from "@/lib/expenses";
 import {
   canManageProjects,
   canManageUsers,
@@ -49,7 +54,7 @@ type HistoryRecord = {
   costUsd: number | null;
   status: string;
   createdAt: string;
-  predictTime?: number;
+  predictTime?: number | null;
 };
 
 type GenerationResult = {
@@ -142,6 +147,61 @@ function StableTextArea({
   );
 }
 
+function formatUsd(amount: number | null | undefined) {
+  return amount === null || amount === undefined
+    ? "—"
+    : `$${amount.toFixed(4)}`;
+}
+
+// Spend grouped by project or user (Expenses page)
+function GroupTable({
+  title,
+  groups,
+}: {
+  title: string;
+  groups: SpendGroup[];
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/70">
+      <div className="border-b border-zinc-800 px-5 py-4 font-semibold">
+        {title}
+      </div>
+
+      {!groups.length ? (
+        <div className="p-8 text-center text-sm text-zinc-600">
+          No spend yet.
+        </div>
+      ) : (
+        <div className="divide-y divide-zinc-800">
+          {groups.map((group) => (
+            <div
+              key={group.id}
+              className="flex items-center justify-between gap-3 px-5 py-3"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm text-zinc-300">
+                  {group.name}
+                </p>
+
+                <p className="mt-0.5 text-xs text-zinc-600">
+                  {group.count} billed
+                  {group.unpriced
+                    ? ` · ${group.unpriced} unpriced`
+                    : ""}
+                </p>
+              </div>
+
+              <span className="text-sm text-zinc-300">
+                {formatUsd(group.amountUsd)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
   const [page, setPage] = useState<Page>("generate");
 
@@ -204,8 +264,8 @@ const [filePreviews, setFilePreviews] =
   const [history, setHistory] =
     useState<HistoryRecord[]>([]);
 
-  const [historyLoaded, setHistoryLoaded] =
-    useState(false);
+  const [expenseReport, setExpenseReport] =
+    useState<ExpenseReport | null>(null);
 
   const activePredictionRef =
     useRef<string | null>(null);
@@ -290,73 +350,105 @@ const [filePreviews, setFilePreviews] =
   }
 
   // --------------------------------------------------
-  // HISTORY LOAD
+  // HISTORY (MongoDB via /api/generations)
+  //
+  // The server writes every record and already scopes
+  // the list: users get their own generations, admins
+  // and the super admin get everyone's.
   // --------------------------------------------------
 
+  function fetchHistory(): Promise<HistoryRecord[]> {
+    return fetch("/api/generations", { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.error || "Unable to load history"
+          );
+        }
+
+        return (data.generations as HistoryRecord[]) ?? [];
+      });
+  }
+
+  // --------------------------------------------------
+  // EXPENSES (MongoDB ledger via /api/expenses)
+  //
+  // Totals are aggregated on the server; we only send
+  // the viewer's local midnights so "today", "this week"
+  // and "this month" match their timezone.
+  // --------------------------------------------------
+
+  function fetchExpenses(): Promise<ExpenseReport> {
+    const now = new Date();
+
+    const todayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate()
+    );
+
+    const weekStart = new Date(todayStart);
+    weekStart.setDate(
+      todayStart.getDate() - todayStart.getDay()
+    );
+
+    const monthStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1
+    );
+
+    const params = new URLSearchParams({
+      todayStart: todayStart.toISOString(),
+      weekStart: weekStart.toISOString(),
+      monthStart: monthStart.toISOString(),
+    });
+
+    return fetch(`/api/expenses?${params}`, {
+      cache: "no-store",
+    }).then(async (response) => {
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Unable to load expenses"
+        );
+      }
+
+      return data as ExpenseReport;
+    });
+  }
+
+  // History and expenses change together
+  function refreshHistory() {
+    fetchHistory()
+      .then(setHistory)
+      .catch((err) => console.error(err));
+
+    fetchExpenses()
+      .then(setExpenseReport)
+      .catch((err) => console.error(err));
+  }
+
   useEffect(() => {
-    try {
-      const raw =
-        localStorage.getItem("ai-studio-history");
+    fetchHistory()
+      .then(setHistory)
+      .catch((err) => {
+        console.error(err);
+        setError("Unable to load history.");
+      });
 
-      if (!raw) {
-        setHistoryLoaded(true);
-        return;
-      }
-
-      const parsed = JSON.parse(raw);
-
-      if (Array.isArray(parsed)) {
-        setHistory(parsed);
-      }
-    } catch (err) {
-      console.error(
-        "Unable to load history:",
-        err
-      );
-    } finally {
-      setHistoryLoaded(true);
-    }
+    fetchExpenses()
+      .then(setExpenseReport)
+      .catch((err) => {
+        console.error(err);
+        setError("Unable to load expenses.");
+      });
   }, []);
 
-  // --------------------------------------------------
-  // HISTORY SAVE
-  // --------------------------------------------------
-
-  useEffect(() => {
-    if (!historyLoaded) return;
-
-    try {
-      localStorage.setItem(
-        "ai-studio-history",
-        JSON.stringify(history.slice(0, 50))
-      );
-    } catch (err) {
-      console.error(
-        "Unable to save history:",
-        err
-      );
-    }
-  }, [history, historyLoaded]);
-
-  // --------------------------------------------------
-  // VISIBLE HISTORY
-  //
-  // History lives in this browser's localStorage, which
-  // may be shared by several accounts. Plain users only
-  // see their own records; admins see everything here.
-  // --------------------------------------------------
-
-  const visibleHistory = useMemo(() => {
-    if (!currentUser) return [];
-
-    if (canManageUsers(currentUser)) return history;
-
-    return history.filter((item) =>
-      item.userId
-        ? item.userId === currentUser.id
-        : item.user === currentUser.name
-    );
-  }, [history, currentUser]);
+  const visibleHistory = history;
 
   // --------------------------------------------------
   // HELPERS
@@ -510,7 +602,7 @@ function getInputImage(): string | null {    const value = inputs.image_input;
       return [
         record,
         ...previous,
-      ].slice(0, 50);
+      ];
     });
   }
 
@@ -523,8 +615,12 @@ function getInputImage(): string | null {    const value = inputs.image_input;
       throw new Error("Download URL is missing");
     }
 
+    // Saved outputs (/history/...) are served by this app;
+    // remote Replicate URLs go through the download proxy.
     const response = await fetch(
-      `/api/download?url=${encodeURIComponent(url)}`
+      url.startsWith("/history/")
+        ? url
+        : `/api/download?url=${encodeURIComponent(url)}`
     );
 
     if (!response.ok) {
@@ -1336,7 +1432,7 @@ setInputs((previous) => {
       try {
         const response =
           await fetch(
-            `/api/predictions/${predictionId}?model=${encodeURIComponent(model)}`,
+            `/api/predictions/${encodeURIComponent(predictionId)}`,
             {
               cache: "no-store",
             }
@@ -1420,6 +1516,10 @@ const outputUrls =
                   ?.predict_time,
             }
           );
+
+          // Pick up the server's record (saved output URL,
+          // final cost) from MongoDB
+          refreshHistory();
 
           return;
         }
@@ -1847,12 +1947,6 @@ if (isFile) {
   // --------------------------------------------------
   // DASHBOARD
   // --------------------------------------------------
-function getSpend(records: HistoryRecord[]): number {
-  return records.reduce((total, item) => {
-    const cost = getAvailableCost(item.costUsd);
-    return total + (cost ?? 0);
-  }, 0);
-}
   function Dashboard() {
     const total =
       visibleHistory.length;
@@ -1864,43 +1958,25 @@ function getSpend(records: HistoryRecord[]): number {
           "succeeded"
       ).length;
 
+    // Spend comes from the MongoDB expense ledger
     const totalSpend =
-      getSpend(visibleHistory);
-
-    const todayKey =
-      new Date().toDateString();
-
-    const todaySpendRecords =
-      visibleHistory.filter(
-        (item) =>
-          new Date(
-            item.createdAt
-          ).toDateString() ===
-          todayKey
-      );
+      expenseReport?.totals.allTime.amountUsd ?? null;
 
     const todaySpend =
-      getSpend(todaySpendRecords);
+      expenseReport?.totals.today.amountUsd ?? null;
+
     const projectSpend =
-      projects.map(
-        (name) => ({
-          name,
-          count:
-            visibleHistory.filter(
-              (item) =>
-                item.project ===
-                name
-            ).length,
-          cost:
-            getSpend(
-              visibleHistory.filter(
-                (item) =>
-                  item.project ===
-                  name
-              )
-            ),
-        })
-      );
+      projectList.map((item) => {
+        const group = expenseReport?.byProject.find(
+          (entry) => entry.id === item.id
+        );
+
+        return {
+          name: item.name,
+          count: group?.count ?? 0,
+          cost: group?.amountUsd ?? 0,
+        };
+      });
 
     return (
       <div className="space-y-6">
@@ -2094,9 +2170,9 @@ function getSpend(records: HistoryRecord[]): number {
           </h1>
 
           <p className="mt-1 text-sm text-zinc-500">
-            Every generation
-            from this
-            browser.
+            {currentUser && canManageUsers(currentUser)
+              ? "Every generation across the workspace."
+              : "Your generations."}
           </p>
         </div>
 
@@ -2118,7 +2194,7 @@ function getSpend(records: HistoryRecord[]): number {
                   >
                     <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-xl bg-black">
                       {item.outputUrl ? (
-  item.model?.includes("kling") ? (
+  getOutputType(item.outputUrl) === "video" ? (
     <video
       src={item.outputUrl}
       className="h-full w-full object-cover"
@@ -2224,66 +2300,18 @@ function getSpend(records: HistoryRecord[]): number {
   // --------------------------------------------------
 
   function Expenses() {
-    const now =
-      new Date();
+    const report = expenseReport;
+    const isManagerView = isManager;
 
-    const month =
-      now.getMonth();
+    const cards: [string, SpendTotal | undefined][] = [
+      ["This month", report?.totals.month],
+      ["This week", report?.totals.week],
+      ["Today", report?.totals.today],
+      ["All time", report?.totals.allTime],
+    ];
 
-    const year =
-      now.getFullYear();
-
-    const monthRecords =
-      visibleHistory.filter(
-        (item) => {
-          const date =
-            new Date(
-              item.createdAt
-            );
-
-          return (
-            date.getMonth() ===
-              month &&
-            date.getFullYear() ===
-              year
-          );
-        }
-      );
-
-    const monthSpend =
-      getSpend(monthRecords);
-
-    const weekStart =
-      new Date(now);
-
-    weekStart.setDate(
-      now.getDate() -
-        now.getDay()
-    );
-
-    const weekRecords =
-      visibleHistory.filter(
-        (item) =>
-          new Date(
-            item.createdAt
-          ) >=
-          weekStart
-      );
-
-    const weekSpend =
-      getSpend(weekRecords);
-
-    const todayRecords =
-      visibleHistory.filter(
-        (item) =>
-          new Date(
-            item.createdAt
-          ).toDateString() ===
-          now.toDateString()
-      );
-
-    const todaySpend =
-      getSpend(todayRecords);
+    const unpricedTotal =
+      report?.totals.allTime.unpriced ?? 0;
 
     return (
       <div className="space-y-6">
@@ -2293,107 +2321,106 @@ function getSpend(records: HistoryRecord[]): number {
           </h1>
 
           <p className="mt-1 text-sm text-zinc-500">
-            Track AI
-            generation
-            spending.
+            {isManagerView
+              ? "Workspace AI spend, from the expense ledger."
+              : "Your AI spend, from the expense ledger."}
           </p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          {[
-            [
-              "This month",
-              monthSpend,
-            ],
-            [
-              "This week",
-              weekSpend,
-            ],
-            [
-              "Today",
-              todaySpend,
-            ],
-          ].map(
-            ([
-              title,
-              amount,
-            ]) => (
-              <div
-                key={title}
-                className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5"
-              >
-                <p className="text-xs text-zinc-600">
-                  {title}
-                </p>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {cards.map(([title, total]) => (
+            <div
+              key={title}
+              className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5"
+            >
+              <p className="text-xs text-zinc-600">
+                {title}
+              </p>
 
-                <p className="mt-3 text-2xl font-semibold">
-                  {amount === null
-                    ? "—"
-                    : `$${Number(
-                        amount
-                      ).toFixed(4)}`}
-                </p>
-              </div>
-            )
+              <p className="mt-3 text-2xl font-semibold">
+                {formatUsd(total?.amountUsd)}
+              </p>
+
+              <p className="mt-1 text-xs text-zinc-600">
+                {total ? `${total.count} billed` : ""}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {unpricedTotal > 0 && (
+          <div className="rounded-xl border border-amber-900 bg-amber-950/20 px-4 py-3 text-sm text-amber-300">
+            {unpricedTotal} billed generation
+            {unpricedTotal === 1 ? " has" : "s have"} no
+            known price (model not in the price table) and
+            {unpricedTotal === 1 ? " is" : " are"} counted
+            as $0.
+          </div>
+        )}
+
+        <div
+          className={`grid gap-6 ${
+            isManagerView ? "lg:grid-cols-2" : ""
+          }`}
+        >
+          <GroupTable
+            title="By project"
+            groups={report?.byProject ?? []}
+          />
+
+          {isManagerView && (
+            <GroupTable
+              title="By user"
+              groups={report?.byUser ?? []}
+            />
           )}
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/70">
           <div className="border-b border-zinc-800 px-5 py-4 font-semibold">
-            Expense
-            history
+            Expense history
           </div>
 
-          {!visibleHistory.length ? (
+          {!report ? (
             <div className="p-10 text-center text-sm text-zinc-600">
-              No expenses
-              yet.
+              Loading expenses...
+            </div>
+          ) : !report.entries.length ? (
+            <div className="p-10 text-center text-sm text-zinc-600">
+              No expenses yet.
             </div>
           ) : (
             <div className="divide-y divide-zinc-800">
-              {visibleHistory.map(
-                (item) => (
-                  <div
-                    key={
-                      item.id
-                    }
-                    className="grid gap-3 px-5 py-4 md:grid-cols-5"
-                  >
-                    <span className="text-sm text-zinc-300">
-                      {
-                        item.project
-                      }
-                    </span>
+              {report.entries.map((item) => (
+                <div
+                  key={item.id}
+                  className="grid gap-3 px-5 py-4 md:grid-cols-5"
+                >
+                  <span className="text-sm text-zinc-300">
+                    {item.project}
+                  </span>
 
-                    <span className="text-sm text-zinc-500">
-                      {
-                        item.user
-                      }
-                    </span>
+                  <span className="text-sm text-zinc-500">
+                    {item.user}
+                  </span>
 
-                    <span className="truncate text-sm text-zinc-500">
-                      {
-                        item.model
-                      }
-                    </span>
+                  <span className="truncate text-sm text-zinc-500">
+                    {item.model}
+                  </span>
 
-                    <span className="text-xs text-zinc-600">
-                      {new Date(
-                        item.createdAt
-                      ).toLocaleString()}
-                    </span>
+                  <span className="text-xs text-zinc-600">
+                    {new Date(
+                      item.incurredAt
+                    ).toLocaleString()}
+                  </span>
 
-                    <span className="text-right text-sm text-zinc-300">
-                      {item.costUsd ==
-                      null
-                        ? "—"
-                        : `$${item.costUsd.toFixed(
-                            4
-                          )}`}
-                    </span>
-                  </div>
-                )
-              )}
+                  <span className="text-right text-sm text-zinc-300">
+                    {item.amountUsd === null
+                      ? "unpriced"
+                      : formatUsd(item.amountUsd)}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </div>

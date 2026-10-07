@@ -35,6 +35,55 @@ export type ProjectDoc = {
   updatedAt: Date;
 };
 
+// One document per Replicate prediction; _id is the
+// Replicate prediction id.
+export type GenerationDoc = {
+  _id: string;
+  userId: string;
+  userName: string;
+  projectId: string;
+  projectName: string;
+  provider: "replicate";
+  model: string;
+  version: string;
+  prompt: string;
+  inputs: Record<string, unknown>;
+  inputImage: string | null;
+  aspectRatio: string;
+  resolution: string;
+  status: string;
+  error: string | null;
+  costUsd: number | null;
+  // Replicate's URL (expires) and our saved copy
+  outputUrl: string | null;
+  localOutputUrl: string | null;
+  predictTime: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+  completedAt: Date | null;
+};
+
+// Expense ledger: one entry per billed (succeeded)
+// generation; _id is the generation/prediction id so
+// an expense can never be recorded twice.
+export type ExpenseDoc = {
+  _id: string;
+  generationId: string;
+  userId: string;
+  userName: string;
+  projectId: string;
+  projectName: string;
+  provider: "replicate";
+  model: string;
+  // null = model has no known price (counted, flagged)
+  amountUsd: number | null;
+  currency: "USD";
+  // From our price table, not a Replicate invoice
+  pricingSource: "estimated";
+  incurredAt: Date;
+  createdAt: Date;
+};
+
 const globalForMongo = globalThis as unknown as {
   mongoClientPromise?: Promise<MongoClient>;
   mongoSetupPromise?: Promise<void>;
@@ -68,6 +117,17 @@ async function setupIndexes(db: Db) {
     db
       .collection<ProjectDoc>("projects")
       .createIndex({ nameKey: 1 }, { unique: true }),
+    db.collection<GenerationDoc>("generations").createIndexes([
+      { key: { createdAt: -1 } },
+      { key: { userId: 1, createdAt: -1 } },
+      { key: { projectId: 1, createdAt: -1 } },
+      { key: { status: 1, createdAt: -1 } },
+    ]),
+    db.collection<ExpenseDoc>("expenses").createIndexes([
+      { key: { incurredAt: -1 } },
+      { key: { userId: 1, incurredAt: -1 } },
+      { key: { projectId: 1, incurredAt: -1 } },
+    ]),
   ]);
 }
 
@@ -99,6 +159,20 @@ export async function projectsCollection(): Promise<
   Collection<ProjectDoc>
 > {
   return (await getDb()).collection<ProjectDoc>("projects");
+}
+
+export async function generationsCollection(): Promise<
+  Collection<GenerationDoc>
+> {
+  return (await getDb()).collection<GenerationDoc>(
+    "generations"
+  );
+}
+
+export async function expensesCollection(): Promise<
+  Collection<ExpenseDoc>
+> {
+  return (await getDb()).collection<ExpenseDoc>("expenses");
 }
 
 export function isDuplicateKeyError(error: unknown): boolean {
