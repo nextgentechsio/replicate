@@ -67,8 +67,10 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Everything except build assets. API routes and
-    // public/history outputs are intentionally included.
-    "/((?!_next/static|_next/image|favicon.ico).*)",
+    // Everything except build assets and public brand
+    // files (favicon, logos), which the login page needs.
+    // API routes and public/history outputs are
+    // intentionally included.
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|brand/).*)",
   ],
 };

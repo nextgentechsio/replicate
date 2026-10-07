@@ -1,6 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import ThemeToggle from "@/app/components/ThemeToggle";
+import { NaarLogo } from "@/app/components/ui/NaarLogo";
+import {
+  Alert,
+  Button,
+  eyebrowClass,
+  Field,
+  inputClass,
+  Spinner,
+} from "@/app/components/ui/primitives";
 
 // Only allow same-origin relative paths, so ?next= can't
 // be used as an open redirect.
@@ -61,83 +71,117 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#09090b] px-5 text-white">
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm space-y-5 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-6"
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sm font-bold text-black">
-            AI
-          </div>
+    <main className="grid min-h-screen bg-canvas text-fg lg:grid-cols-[1.1fr_1fr]">
+      {/* BRAND PANEL (desktop): NAAR black, like the about.naar.io hero */}
+      <section className="relative hidden flex-col justify-between overflow-hidden bg-[#0d0d0d] p-12 text-[#f4f4f3] lg:flex">
+        <NaarLogo height={30} className="text-white" />
 
-          <div>
-            <p className="text-sm font-semibold">
-              AI Studio
-            </p>
+        <div className="max-w-md">
+          <p className="mb-5 text-[11px] font-medium uppercase tracking-[0.3em] text-[#b8b8b6]">
+            Naar Studio
+          </p>
 
-            <p className="text-[10px] text-zinc-600">
-              Sign in to continue
-            </p>
-          </div>
+          <h1 className="text-5xl font-bold leading-[1.05] tracking-[-0.03em]">
+            Create with Naar.
+            <br />
+            <span className="text-[#2fd6c8]">Spend</span> with
+            purpose.
+          </h1>
+
+          <p className="mt-6 text-base leading-7 text-[#b8b8b6]">
+            Generate images and video for every project,
+            with every run costed and tracked.
+          </p>
         </div>
 
-        <div className="space-y-2">
-          <label
-            htmlFor="username"
-            className="text-sm text-zinc-300"
+        <p className="text-xs text-[#959593]">
+          Internal workspace · Naar
+        </p>
+      </section>
+
+      {/* SIGN-IN FORM */}
+      <section className="flex items-center justify-center px-5 py-12">
+        <div className="w-full max-w-sm">
+          <div className="mb-10 flex items-center gap-2 lg:hidden">
+            <NaarLogo height={26} />
+            <span className="pt-0.5 text-[15px] font-medium text-fg-muted">
+              Studio
+            </span>
+          </div>
+
+          <p className={eyebrowClass}>Welcome back</p>
+
+          <h2 className="mt-2 text-[28px] font-bold leading-tight tracking-[-0.02em]">
+            Sign in to Naar Studio
+          </h2>
+
+          <p className="mt-2 text-sm text-fg-muted">
+            Use the username and password from your admin.
+          </p>
+
+          <form
+            onSubmit={handleSubmit}
+            className="mt-8 space-y-5"
+            noValidate={false}
           >
-            Username
-          </label>
+            <Field label="Username">
+              {(control) => (
+                <input
+                  {...control}
+                  value={username}
+                  onChange={(event) =>
+                    setUsername(event.target.value)
+                  }
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  autoFocus
+                  required
+                  className={inputClass}
+                />
+              )}
+            </Field>
 
-          <input
-            id="username"
-            value={username}
-            onChange={(event) =>
-              setUsername(event.target.value)
-            }
-            autoComplete="username"
-            autoFocus
-            required
-            className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm outline-none focus:border-zinc-500"
-          />
-        </div>
+            <Field label="Password">
+              {(control) => (
+                <input
+                  {...control}
+                  type="password"
+                  value={password}
+                  onChange={(event) =>
+                    setPassword(event.target.value)
+                  }
+                  autoComplete="current-password"
+                  required
+                  className={inputClass}
+                />
+              )}
+            </Field>
 
-        <div className="space-y-2">
-          <label
-            htmlFor="password"
-            className="text-sm text-zinc-300"
-          >
-            Password
-          </label>
+            {error && <Alert>{error}</Alert>}
 
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(event) =>
-              setPassword(event.target.value)
-            }
-            autoComplete="current-password"
-            required
-            className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm outline-none focus:border-zinc-500"
-          />
-        </div>
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              disabled={submitting}
+              className="w-full"
+            >
+              {submitting ? (
+                <>
+                  <Spinner /> Signing in…
+                </>
+              ) : (
+                "Sign in"
+              )}
+            </Button>
+          </form>
 
-        {error && (
-          <div className="rounded-xl border border-red-900 bg-red-950/30 px-4 py-3 text-sm text-red-300">
-            {error}
+          <div className="mt-8 flex justify-center">
+            <ThemeToggle />
           </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={submitting}
-          className="flex h-11 w-full items-center justify-center rounded-xl bg-white text-sm font-semibold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600"
-        >
-          {submitting ? "Signing in..." : "Sign in"}
-        </button>
-      </form>
+        </div>
+      </section>
     </main>
   );
 }

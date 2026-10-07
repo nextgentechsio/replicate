@@ -1,14 +1,146 @@
 @import "tailwindcss";
 
+/* ==================================================
+   DESIGN TOKENS
+
+   Semantic colors only: components use bg-surface,
+   text-fg-muted, border-line, bg-accent... never raw
+   palette shades, so light and dark stay in sync.
+
+   Theme resolution:
+   - no data-theme on <html>  -> follow the OS setting
+   - data-theme="light|dark"  -> user's explicit choice
+   (set before paint by the inline script in layout.tsx)
+
+   Text tokens meet WCAG AA (4.5:1) on canvas, surface
+   and sunken in both themes.
+   ================================================== */
+
 :root {
-  --background: #080b12;
-  --foreground: #f4f7fb;
+  color-scheme: light;
+
+  /* NAAR palette: black / warm grey / mint, cyan accent */
+  --canvas: #f4f4f3;
+  --surface: #ffffff;
+  --sunken: #f7f7f6;
+  --raised: #ebebea;
+  --line: #e4e4e2;
+  --line-strong: #cfcfcc;
+
+  --fg: #0d0d0d;
+  --fg-muted: #4a4a4a;
+  --fg-subtle: #626262;
+
+  /* Primary actions are NAAR black, like about.naar.io */
+  --accent: #0d0d0d;
+  --accent-hover: #2b2b2b;
+  --accent-soft: #e7f5f0;
+  --on-accent: #ffffff;
+
+  /* NAAR cyan: highlights only, never body text on white */
+  --brand: #00ccdd;
+  --brand-soft: #e7f5f0;
+
+  --danger: #c81e1e;
+  --on-danger: #ffffff;
+  --success: #047857;
+  --warning: #a14a07;
+
+  --focus-ring: #0d0d0d;
+  --shadow-card: 0 1px 2px rgb(13 13 13 / 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --canvas: #0d0d0d;
+    --surface: #161616;
+    --sunken: #111111;
+    --raised: #222222;
+    --line: #2a2a2a;
+    --line-strong: #3d3d3d;
+
+    --fg: #f4f4f3;
+    --fg-muted: #b8b8b6;
+    --fg-subtle: #959593;
+
+    --accent: #f4f4f3;
+    --accent-hover: #ffffff;
+    --accent-soft: #10302c;
+    --on-accent: #0d0d0d;
+
+    --brand: #2fd6c8;
+    --brand-soft: #10302c;
+
+    --danger: #f87171;
+    --on-danger: #0d0d0d;
+    --success: #34d399;
+    --warning: #fbbf24;
+
+    --focus-ring: #2fd6c8;
+    --shadow-card: none;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas: #0d0d0d;
+  --surface: #161616;
+  --sunken: #111111;
+  --raised: #222222;
+  --line: #2a2a2a;
+  --line-strong: #3d3d3d;
+
+  --fg: #f4f4f3;
+  --fg-muted: #b8b8b6;
+  --fg-subtle: #959593;
+
+  --accent: #f4f4f3;
+  --accent-hover: #ffffff;
+  --accent-soft: #10302c;
+  --on-accent: #0d0d0d;
+
+  --brand: #2fd6c8;
+  --brand-soft: #10302c;
+
+  --danger: #f87171;
+  --on-danger: #0d0d0d;
+  --success: #34d399;
+  --warning: #fbbf24;
+
+  --focus-ring: #2fd6c8;
+  --shadow-card: none;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+
+  --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  --shadow-card: var(--shadow-card);
+
+  --font-sans: var(--font-lufga);
   --font-mono: var(--font-geist-mono);
 }
 
@@ -17,24 +149,30 @@
 }
 
 html {
-  background: #080b12;
+  background: var(--canvas);
 }
 
 body {
   margin: 0;
-  background:
-    radial-gradient(
-      circle at 15% 10%,
-      rgba(59, 130, 246, 0.08),
-      transparent 30%
-    ),
-    radial-gradient(
-      circle at 85% 90%,
-      rgba(139, 92, 246, 0.06),
-      transparent 30%
-    ),
-    #080b12;
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
   min-height: 100vh;
+  background: var(--canvas);
+  color: var(--fg);
+  font-family: var(--font-lufga), "Segoe UI", system-ui,
+    sans-serif;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Visible keyboard focus everywhere, never on mouse click */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

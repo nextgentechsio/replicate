@@ -19,7 +19,7 @@ type FormState = {
 };
 
 const inputClass =
-  "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm outline-none focus:border-zinc-500";
+  "h-11 w-full rounded-xl border border-line bg-sunken px-3 text-sm outline-none focus:border-accent";
 
 async function callApi(
   url: string,
@@ -228,27 +228,27 @@ export default function ProjectsAdmin({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-fg-muted">
           Active projects appear in the Generate page.
         </p>
 
         <button
           type="button"
           onClick={openCreate}
-          className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-zinc-200"
+          className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-on-accent hover:bg-accent-hover"
         >
           Add project
         </button>
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-900 bg-red-950/30 px-4 py-3 text-sm text-red-300">
+        <div className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">
           {error}
         </div>
       )}
 
       {notice && (
-        <div className="rounded-xl border border-emerald-900 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-300">
+        <div className="rounded-xl border border-success/40 bg-success/10 px-4 py-3 text-sm text-success">
           {notice}
         </div>
       )}
@@ -256,7 +256,7 @@ export default function ProjectsAdmin({
       {form && (
         <form
           onSubmit={submitForm}
-          className="space-y-5 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-5"
+          className="space-y-5 rounded-2xl border border-line bg-surface p-5"
         >
           <h2 className="font-semibold">
             {form.mode === "create"
@@ -265,7 +265,7 @@ export default function ProjectsAdmin({
           </h2>
 
           <div className="space-y-2">
-            <label className="text-sm text-zinc-300">
+            <label className="text-sm text-fg">
               Project name
             </label>
 
@@ -283,7 +283,7 @@ export default function ProjectsAdmin({
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm text-zinc-300">
+            <label className="text-sm text-fg">
               Description (optional)
             </label>
 
@@ -297,7 +297,7 @@ export default function ProjectsAdmin({
               }
               rows={3}
               maxLength={500}
-              className="w-full resize-y rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-zinc-500"
+              className="w-full resize-y rounded-xl border border-line bg-sunken px-3 py-2 text-sm outline-none focus:border-accent"
             />
           </div>
 
@@ -305,7 +305,7 @@ export default function ProjectsAdmin({
             <button
               type="submit"
               disabled={saving}
-              className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-zinc-200 disabled:bg-zinc-800 disabled:text-zinc-600"
+              className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-on-accent hover:bg-accent-hover disabled:bg-raised disabled:text-fg-subtle"
             >
               {saving ? "Saving..." : "Save"}
             </button>
@@ -313,7 +313,7 @@ export default function ProjectsAdmin({
             <button
               type="button"
               onClick={() => setForm(null)}
-              className="rounded-xl border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800"
+              className="rounded-xl border border-line-strong px-4 py-2 text-sm text-fg hover:bg-raised"
             >
               Cancel
             </button>
@@ -321,28 +321,28 @@ export default function ProjectsAdmin({
         </form>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/70">
+      <div className="overflow-hidden rounded-2xl border border-line bg-surface">
         {loading ? (
-          <div className="p-10 text-center text-sm text-zinc-600">
+          <div className="p-10 text-center text-sm text-fg-subtle">
             Loading projects...
           </div>
         ) : !projects.length ? (
-          <div className="p-10 text-center text-sm text-zinc-600">
+          <div className="p-10 text-center text-sm text-fg-subtle">
             No projects yet. Add one to start generating.
           </div>
         ) : (
-          <div className="divide-y divide-zinc-800">
+          <div className="divide-y divide-line">
             {projects.map((project) => (
               <div
                 key={project.id}
                 className="grid items-center gap-3 px-5 py-4 md:grid-cols-[1fr_100px_auto]"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-zinc-200">
+                  <p className="truncate text-sm font-medium text-fg">
                     {project.name}
                   </p>
 
-                  <p className="mt-1 line-clamp-2 text-xs text-zinc-600">
+                  <p className="mt-1 line-clamp-2 text-xs text-fg-subtle">
                     {project.description || "No description"}
                   </p>
                 </div>
@@ -350,8 +350,8 @@ export default function ProjectsAdmin({
                 <span
                   className={`text-xs ${
                     project.status === "active"
-                      ? "text-emerald-400"
-                      : "text-zinc-500"
+                      ? "text-success"
+                      : "text-fg-muted"
                   }`}
                 >
                   {project.status === "active"
@@ -363,7 +363,7 @@ export default function ProjectsAdmin({
                   <button
                     type="button"
                     onClick={() => openEdit(project)}
-                    className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                    className="rounded-lg border border-line-strong px-3 py-1.5 text-xs text-fg hover:bg-raised"
                   >
                     Edit
                   </button>
@@ -371,7 +371,7 @@ export default function ProjectsAdmin({
                   <button
                     type="button"
                     onClick={() => toggleArchived(project)}
-                    className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                    className="rounded-lg border border-line-strong px-3 py-1.5 text-xs text-fg hover:bg-raised"
                   >
                     {project.status === "active"
                       ? "Archive"
@@ -381,7 +381,7 @@ export default function ProjectsAdmin({
                   <button
                     type="button"
                     onClick={() => removeProject(project)}
-                    className="rounded-lg border border-red-900 px-3 py-1.5 text-xs text-red-300 hover:bg-red-950/40"
+                    className="rounded-lg border border-danger/40 px-3 py-1.5 text-xs text-danger hover:bg-danger/15"
                   >
                     Delete
                   </button>

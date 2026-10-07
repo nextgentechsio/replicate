@@ -32,13 +32,17 @@ export default function ManagementPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.2em] text-fg-subtle">
+          Admin
+        </p>
+
+        <h1 className="text-[28px] font-bold leading-tight tracking-[-0.02em] text-fg sm:text-[32px]">
           {showProjects
             ? "User & Project Management"
             : "User Management"}
         </h1>
 
-        <p className="mt-1 text-sm text-zinc-500">
+        <p className="mt-1 text-sm text-fg-muted">
           {showProjects
             ? "Add people, set their passwords and roles, and create projects."
             : "Add people and set their passwords."}
@@ -46,7 +50,7 @@ export default function ManagementPage({
       </div>
 
       {showProjects && (
-        <div className="flex gap-1 rounded-xl border border-zinc-800 bg-zinc-900/70 p-1 sm:w-fit">
+        <div className="flex gap-1 rounded-xl border border-line bg-surface p-1 sm:w-fit">
           {(
             [
               ["users", "Users"],
@@ -59,8 +63,8 @@ export default function ManagementPage({
               onClick={() => setTab(id)}
               className={`flex-1 rounded-lg px-4 py-2 text-sm transition sm:flex-none ${
                 activeTab === id
-                  ? "bg-white font-semibold text-black"
-                  : "text-zinc-400 hover:text-white"
+                  ? "bg-accent font-semibold text-on-accent"
+                  : "text-fg-muted hover:text-fg"
               }`}
             >
               {label}
