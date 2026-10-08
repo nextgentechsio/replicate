@@ -23,6 +23,9 @@ export type UserDoc = {
   disabled: boolean;
   passwordHash: string;
   sessionVersion: number;
+  // Presence (see lib/presence.ts)
+  lastSeenAt?: Date | null;
+  signedOutAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };

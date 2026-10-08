@@ -1,9 +1,22 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE } from "@/lib/session";
+import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
+import { recordSignOut } from "@/lib/users";
+
+export const runtime = "nodejs";
 
 export async function POST() {
-  const response = NextResponse.json({ success: true });
+  // Show the user offline straight away (best effort:
+  // signing out must work even if this fails)
+  const payload = verifySessionToken((await cookies()).get(SESSION_COOKIE)?.value);
 
+  if (payload) {
+    await recordSignOut(payload.uid).catch((error) =>
+      console.error("Record sign-out error:", error)
+    );
+  }
+
+  const response = NextResponse.json({ success: true });
   response.cookies.delete(SESSION_COOKIE);
 
   return response;

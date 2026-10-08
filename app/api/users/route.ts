@@ -10,9 +10,21 @@ export async function GET() {
   const auth = await requireUser([...MANAGERS]);
   if (auth.response) return auth.response;
 
-  return NextResponse.json({
-    users: await listUsers(),
-  });
+  try {
+    return NextResponse.json({
+      // Online status is for the super admin only
+      users: await listUsers({
+        withPresence: auth.user.role === "super_admin",
+      }),
+    });
+  } catch (error) {
+    console.error("List users error:", error);
+
+    return NextResponse.json(
+      { error: "Failed to load users" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(request: Request) {

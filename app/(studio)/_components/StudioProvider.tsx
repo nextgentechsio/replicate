@@ -9,6 +9,7 @@ import {
 } from "react";
 import { fetchActiveProjects } from "@/lib/client/data";
 import { errorMessage } from "@/lib/client/http";
+import { HEARTBEAT_MS } from "@/lib/presence";
 import type { PublicProject, PublicUser } from "@/lib/roles";
 
 // --------------------------------------------------
@@ -57,6 +58,26 @@ export function StudioProvider({
   useEffect(() => {
     refreshProjects();
   }, [refreshProjects]);
+
+  // Presence heartbeat while this tab is visible, so the
+  // super admin can see who's online (lib/presence.ts)
+  useEffect(() => {
+    const beat = () => {
+      if (document.visibilityState !== "visible") return;
+      fetch("/api/presence", { method: "POST", keepalive: true }).catch(() => {
+        // Offline for a moment: the next beat will do
+      });
+    };
+
+    beat();
+    const timer = setInterval(beat, HEARTBEAT_MS);
+    document.addEventListener("visibilitychange", beat);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", beat);
+    };
+  }, []);
 
   return (
     <StudioContext.Provider

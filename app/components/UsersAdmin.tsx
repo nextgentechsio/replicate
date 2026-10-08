@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { formatLastSeen } from "@/lib/presence";
 import {
   assignableRoles,
   canManageUser,
@@ -67,6 +73,11 @@ export default function UsersAdmin({
 
   const roleOptions = assignableRoles(currentUser);
 
+  // Online status: super admin only (the API only sends
+  // it to them, too)
+  const showPresence = currentUser.role === "super_admin";
+  const now = useMinuteClock();
+
   // `loading` starts true; reloads after edits refresh
   // in place without flashing the loading state.
   const loadUsers = useCallback(async () => {
@@ -111,6 +122,24 @@ export default function UsersAdmin({
       cancelled = true;
     };
   }, []);
+
+  // Keep online status fresh while the page is open
+  useEffect(() => {
+    if (!showPresence) return;
+
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") loadUsers();
+    }, PRESENCE_REFRESH_MS);
+
+    return () => clearInterval(timer);
+  }, [showPresence, loadUsers]);
+
+  // You're looking at this page, so you're online (your
+  // first heartbeat may land after the list loads)
+  const isOnline = (user: PublicUser) =>
+    user.id === currentUser.id || Boolean(user.presence?.online);
+
+  const onlineCount = users.filter(isOnline).length;
 
   function openCreate() {
     setError("");
@@ -245,11 +274,26 @@ export default function UsersAdmin({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <p className="text-sm text-fg-muted">
-          {currentUser.role === "super_admin"
-            ? "Use Edit on your own row to change your name or password."
-            : "You can manage accounts with the User role."}
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-fg-muted">
+            {currentUser.role === "super_admin"
+              ? "Use Edit on your own row to change your name or password."
+              : "You can manage accounts with the User role."}
+          </p>
+
+          {showPresence && !loading && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-xs text-fg-muted"
+              aria-live="polite"
+            >
+              <span
+                aria-hidden
+                className={`h-2 w-2 rounded-full ${onlineCount ? "bg-success" : "bg-line-strong"}`}
+              />
+              {onlineCount} online now
+            </span>
+          )}
+        </div>
 
         <button
           type="button"
@@ -427,19 +471,40 @@ export default function UsersAdmin({
                   key={user.id}
                   className="grid items-center gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_120px_90px_220px]"
                 >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-fg">
-                      {user.name}
-                      {isSelf && (
-                        <span className="ml-2 text-xs text-fg-muted">
-                          (you)
-                        </span>
-                      )}
-                    </p>
+                  <div className="flex min-w-0 items-center gap-3">
+                    {showPresence && (
+                      <UserAvatar
+                        name={user.name}
+                        online={isOnline(user)}
+                      />
+                    )}
 
-                    <p className="mt-1 truncate text-xs text-fg-subtle">
-                      @{user.username}
-                    </p>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-fg">
+                        {user.name}
+                        {isSelf && (
+                          <span className="ml-2 text-xs text-fg-muted">
+                            (you)
+                          </span>
+                        )}
+                      </p>
+
+                      <p className="mt-1 truncate text-xs text-fg-subtle">
+                        @{user.username}
+                        {showPresence && user.presence && (
+                          <>
+                            {" · "}
+                            {isOnline(user) ? (
+                              <span className="font-medium text-success">
+                                Online now
+                              </span>
+                            ) : now ? (
+                              formatLastSeen(user.presence.lastSeenAt, now)
+                            ) : null}
+                          </>
+                        )}
+                      </p>
+                    </div>
                   </div>
 
                   <span className="text-xs text-fg-muted">
@@ -498,5 +563,39 @@ export default function UsersAdmin({
         )}
       </div>
     </div>
+  );
+}
+
+const PRESENCE_REFRESH_MS = 30_000;
+
+// Current time, updated each minute, browser-only (null
+// during the server render), for "Last seen 5 min ago"
+function subscribeMinute(onChange: () => void) {
+  const timer = setInterval(onChange, 60_000);
+  return () => clearInterval(timer);
+}
+
+function useMinuteClock(): number | null {
+  const minute = useSyncExternalStore(
+    subscribeMinute,
+    () => Math.floor(Date.now() / 60_000),
+    () => null
+  );
+
+  return minute === null ? null : minute * 60_000;
+}
+
+function UserAvatar({ name, online }: { name: string; online: boolean }) {
+  return (
+    <span className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-raised text-xs font-semibold text-fg">
+      {name.charAt(0).toUpperCase() || "?"}
+      <span
+        className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface ${
+          online ? "bg-success" : "bg-line-strong"
+        }`}
+        role="img"
+        aria-label={online ? "Online" : "Offline"}
+      />
+    </span>
   );
 }

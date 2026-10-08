@@ -11,6 +11,8 @@
 // user:        manages no one
 // --------------------------------------------------
 
+import type { Presence } from "@/lib/presence";
+
 export const ROLES = [
   "super_admin",
   "admin",
@@ -33,6 +35,8 @@ export type PublicUser = {
   disabled: boolean;
   createdAt: string;
   updatedAt: string;
+  // Only included for the super admin (Users page)
+  presence?: Presence;
 };
 
 type Actor = Pick<PublicUser, "id" | "role" | "disabled">;

@@ -7,6 +7,10 @@ import {
 import type { Collection } from "mongodb";
 import { promisify } from "util";
 import {
+  HEARTBEAT_MIN_WRITE_MS,
+  presenceOf,
+} from "@/lib/presence";
+import {
   isDuplicateKeyError,
   usersCollection,
   type UserDoc,
@@ -269,13 +273,53 @@ export async function findUserById(
   return doc ? fromDoc(doc) : null;
 }
 
-export async function listUsers(): Promise<PublicUser[]> {
+export async function listUsers(options?: {
+  withPresence?: boolean;
+}): Promise<PublicUser[]> {
   const docs = await (await getUsers())
     .find({})
     .sort({ createdAt: 1 })
     .toArray();
 
-  return docs.map((doc) => toPublicUser(fromDoc(doc)));
+  const now = Date.now();
+
+  return docs.map((doc) => ({
+    ...toPublicUser(fromDoc(doc)),
+    ...(options?.withPresence
+      ? { presence: presenceOf(doc.lastSeenAt, doc.signedOutAt, now) }
+      : {}),
+  }));
+}
+
+// --------------------------------------------------
+// PRESENCE
+// --------------------------------------------------
+
+// Heartbeat from an open app tab. Writes at most every
+// HEARTBEAT_MIN_WRITE_MS per user, however many tabs.
+export async function recordHeartbeat(userId: string) {
+  const now = new Date();
+
+  await (await getUsers()).updateOne(
+    {
+      _id: userId,
+      $or: [
+        { lastSeenAt: { $exists: false } },
+        { lastSeenAt: null },
+        { lastSeenAt: { $lt: new Date(now.getTime() - HEARTBEAT_MIN_WRITE_MS) } },
+      ],
+    },
+    { $set: { lastSeenAt: now } }
+  );
+}
+
+// Signing out shows the user offline at once (another
+// device's next heartbeat brings them back online)
+export async function recordSignOut(userId: string) {
+  await (await getUsers()).updateOne(
+    { _id: userId },
+    { $set: { signedOutAt: new Date() } }
+  );
 }
 
 export async function hasAnyUsers(): Promise<boolean> {
