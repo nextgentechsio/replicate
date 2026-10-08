@@ -45,10 +45,6 @@ export default function StudioShell({
   const pathname = usePathname();
   const [navOpen, setNavOpen] = useState(false);
 
-  const adminLabel = canManageProjects(currentUser)
-    ? "Users & Projects"
-    : "Users";
-
   const navGroups: { label: string; items: NavItem[] }[] = [
     {
       label: "Create",
@@ -70,7 +66,16 @@ export default function StudioShell({
           {
             label: "Admin",
             items: [
-              { href: "/admin", label: adminLabel, icon: "users" as const },
+              { href: "/admin/users", label: "Users", icon: "users" as const },
+              ...(canManageProjects(currentUser)
+                ? [
+                    {
+                      href: "/admin/projects",
+                      label: "Projects",
+                      icon: "folder" as const,
+                    },
+                  ]
+                : []),
             ],
           },
         ]

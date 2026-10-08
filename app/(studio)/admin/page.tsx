@@ -1,18 +1,6 @@
-import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
-import { canManageUsers } from "@/lib/roles";
-import AdminView from "./AdminView";
 
-export const metadata: Metadata = { title: "Users & Projects" };
-
-// Admins and the super admin only. The nav hides the
-// link for others; this stops a typed URL too (and the
-// API re-checks every action anyway).
-export default async function Page() {
-  const user = await getCurrentUser();
-
-  if (!user || !canManageUsers(user)) redirect("/generate");
-
-  return <AdminView />;
+// Old combined page: Users and Projects are separate now
+export default function Page() {
+  redirect("/admin/users");
 }

@@ -247,8 +247,8 @@ export default function UsersAdmin({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <p className="text-sm text-fg-muted">
           {currentUser.role === "super_admin"
-            ? "Manage admins and users. Use Edit on your own row to change your name or password."
-            : "Manage accounts with the User role."}
+            ? "Use Edit on your own row to change your name or password."
+            : "You can manage accounts with the User role."}
         </p>
 
         <button

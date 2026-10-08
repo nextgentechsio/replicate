@@ -165,7 +165,7 @@ export default function GenerateView() {
 
   const projectHint = !projects.length
     ? canManageProjects(currentUser)
-      ? "No projects yet. Create one in Users & Projects."
+      ? "No projects yet. Create one in Admin › Projects."
       : "No projects yet. Ask an admin to create one."
     : "Spend from this run is charged to the project.";
 
