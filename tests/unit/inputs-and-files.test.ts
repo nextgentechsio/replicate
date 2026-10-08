@@ -92,3 +92,14 @@ describe("display helpers", () => {
     expect(getOutputType("https://x/file")).toBe("file");
   });
 });
+
+describe("session timer format", async () => {
+  const { formatElapsed } = await import("@/app/(studio)/_components/SessionTimer");
+
+  it("shows hh:mm:ss, never negative, with days past 24h", () => {
+    expect(formatElapsed(0)).toBe("00:00:00");
+    expect(formatElapsed(-5000)).toBe("00:00:00");
+    expect(formatElapsed((1 * 3600 + 24 * 60 + 7) * 1000)).toBe("01:24:07");
+    expect(formatElapsed((26 * 3600 + 5) * 1000)).toBe("1d 02:00:05");
+  });
+});

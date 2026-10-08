@@ -18,6 +18,7 @@ import {
 } from "@/lib/roles";
 import { signOut, useStudio } from "./StudioProvider";
 import Greeting from "./Greeting";
+import SessionTimer from "./SessionTimer";
 import { useDialog } from "./useDialog";
 
 // --------------------------------------------------
@@ -40,7 +41,7 @@ export default function StudioShell({
 }: {
   children: React.ReactNode;
 }) {
-  const { currentUser } = useStudio();
+  const { currentUser, sessionStartedAt } = useStudio();
   const pathname = usePathname();
   const [navOpen, setNavOpen] = useState(false);
 
@@ -242,6 +243,8 @@ export default function StudioShell({
               <Greeting name={currentUser.name} />
             </div>
           </div>
+
+          <SessionTimer startedAt={sessionStartedAt} />
         </header>
 
         <main

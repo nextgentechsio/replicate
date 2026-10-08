@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, getSessionStartedAt } from "@/lib/auth";
 import { toPublicUser } from "@/lib/users";
 import { GenerateProvider } from "./_components/GenerateProvider";
 import StudioShell from "./_components/StudioShell";
@@ -23,10 +23,15 @@ export default async function StudioLayout({
 }) {
   const user = await getCurrentUser();
 
-  if (!user) redirect("/login");
+  const sessionStartedAt = await getSessionStartedAt();
+
+  if (!user || sessionStartedAt === null) redirect("/login");
 
   return (
-    <StudioProvider currentUser={toPublicUser(user)}>
+    <StudioProvider
+      currentUser={toPublicUser(user)}
+      sessionStartedAt={sessionStartedAt}
+    >
       <GenerateProvider>
         <StudioShell>{children}</StudioShell>
       </GenerateProvider>

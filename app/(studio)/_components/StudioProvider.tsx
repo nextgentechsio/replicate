@@ -21,6 +21,8 @@ import type { PublicProject, PublicUser } from "@/lib/roles";
 
 type StudioContextValue = {
   currentUser: PublicUser;
+  // When this session signed in (ms since epoch)
+  sessionStartedAt: number;
   projects: PublicProject[];
   projectsError: string;
   refreshProjects: () => void;
@@ -30,9 +32,11 @@ const StudioContext = createContext<StudioContextValue | null>(null);
 
 export function StudioProvider({
   currentUser,
+  sessionStartedAt,
   children,
 }: {
   currentUser: PublicUser;
+  sessionStartedAt: number;
   children: React.ReactNode;
 }) {
   const [projects, setProjects] = useState<PublicProject[]>([]);
@@ -56,7 +60,13 @@ export function StudioProvider({
 
   return (
     <StudioContext.Provider
-      value={{ currentUser, projects, projectsError, refreshProjects }}
+      value={{
+        currentUser,
+        sessionStartedAt,
+        projects,
+        projectsError,
+        refreshProjects,
+      }}
     >
       {children}
     </StudioContext.Provider>

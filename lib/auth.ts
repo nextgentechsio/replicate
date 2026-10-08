@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { Role } from "@/lib/roles";
 import {
   SESSION_COOKIE,
+  SESSION_MAX_AGE_SECONDS,
   verifySessionToken,
 } from "@/lib/session";
 import {
@@ -68,4 +69,15 @@ export async function requireUser(
   }
 
   return { user };
+}
+
+// When the current session began (ms since epoch), for
+// the session timer. Tokens are issued with a fixed
+// lifetime, so sign-in time = expiry − lifetime; no extra
+// field (and no change for existing sessions) needed.
+export async function getSessionStartedAt(): Promise<number | null> {
+  const cookieStore = await cookies();
+  const payload = verifySessionToken(cookieStore.get(SESSION_COOKIE)?.value);
+
+  return payload ? (payload.exp - SESSION_MAX_AGE_SECONDS) * 1000 : null;
 }
