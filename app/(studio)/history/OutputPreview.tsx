@@ -42,11 +42,21 @@ export default function OutputPreview({
     );
   }
 
-  if (status === "failed" || status === "canceled") {
+  if (status === "failed" || status === "canceled" || status === "unknown") {
     return (
       <Placeholder>
-        <Icon name="alert" size={20} className="text-danger" />
-        <span>{status === "failed" ? "Failed" : "Canceled"}</span>
+        <Icon
+          name="alert"
+          size={20}
+          className={status === "unknown" ? "text-warning" : "text-danger"}
+        />
+        <span>
+          {status === "failed"
+            ? "Failed"
+            : status === "canceled"
+              ? "Canceled"
+              : "Lost: Replicate no longer has this run"}
+        </span>
       </Placeholder>
     );
   }

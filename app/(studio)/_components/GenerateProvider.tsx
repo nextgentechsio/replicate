@@ -118,7 +118,8 @@ type GenerateContextValue = {
   schemaLoading: boolean;
   inputs: Record<string, unknown>;
   updateInput: (key: string, value: unknown) => void;
-  filePreviews: Record<string, string[]>;
+  // Local previews of uploaded images, by uploaded URL
+  filePreviews: Record<string, string>;
   removeImage: (key: string, index: number) => void;
   uploading: Record<string, number>;
   uploadFile: (key: string, file: File) => void;
@@ -161,9 +162,9 @@ export function GenerateProvider({
   const [schema, setSchema] = useState<Schema>({});
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [inputs, setInputs] = useState<Record<string, unknown>>({});
-  const [filePreviews, setFilePreviews] = useState<
-    Record<string, string[]>
-  >({});
+  const [filePreviews, setFilePreviews] = useState<Record<string, string>>(
+    {}
+  );
   const [uploading, setUploading] = useState<Record<string, number>>({});
 
   const [generating, setGenerating] = useState(false);
@@ -173,6 +174,14 @@ export function GenerateProvider({
   // Ignore schema responses for a model that is no
   // longer selected (fast clicking between models)
   const latestModelRef = useRef("");
+  // Bumped on every model change: uploads that finish
+  // afterwards belong to the old form and are dropped
+  const formEpochRef = useRef(0);
+  // Bumped on every run: an older run's polling stops and
+  // can't touch the newer result or error
+  const runRef = useRef(0);
+  // Latest model search; older responses are ignored
+  const searchSeqRef = useRef(0);
 
   // --------------------------------------------------
   // MODEL SEARCH ("Use another Replicate model")
@@ -185,6 +194,9 @@ export function GenerateProvider({
 
     // State is only set inside the timer callback
     const timer = setTimeout(async () => {
+      const seq = ++searchSeqRef.current;
+      const isLatest = () => seq === searchSeqRef.current;
+
       setSearching(true);
       setError("");
 
@@ -193,13 +205,17 @@ export function GenerateProvider({
           `/api/models/search?q=${encodeURIComponent(query)}`
         );
 
-        setSearchResults(Array.isArray(data.models) ? data.models : []);
+        if (isLatest()) {
+          setSearchResults(Array.isArray(data.models) ? data.models : []);
+        }
       } catch (err) {
         console.error(err);
-        setSearchResults([]);
-        setError("Unable to search models.");
+        if (isLatest()) {
+          setSearchResults([]);
+          setError("Unable to search models.");
+        }
       } finally {
-        setSearching(false);
+        if (isLatest()) setSearching(false);
       }
     }, 400);
 
@@ -212,9 +228,7 @@ export function GenerateProvider({
 
   const clearPreviews = useCallback(() => {
     setFilePreviews((previous) => {
-      Object.values(previous)
-        .flat()
-        .forEach((url) => URL.revokeObjectURL(url));
+      Object.values(previous).forEach((url) => URL.revokeObjectURL(url));
 
       return {};
     });
@@ -222,9 +236,21 @@ export function GenerateProvider({
 
   const chooseModel = useCallback(
     (id: string, options: ChooseModelOptions = {}) => {
+      // Clicking the selected model again keeps the form
+      if (
+        id === latestModelRef.current &&
+        !options.presetInputs &&
+        !options.fromSearch
+      ) {
+        return;
+      }
+
       latestModelRef.current = id;
+      formEpochRef.current += 1;
+      runRef.current += 1;
 
       setModel(id);
+      setUploading({});
       setSearch(options.fromSearch ? id : "");
       setSearchResults([]);
       setResult(null);
@@ -289,28 +315,31 @@ export function GenerateProvider({
     setInputs((previous) => ({ ...previous, [key]: value }));
   }, []);
 
-  const removeImage = useCallback((key: string, index: number) => {
-    setInputs((previous) => {
-      const value = previous[key];
+  const removeImage = useCallback(
+    (key: string, index: number) => {
+      const value = inputs[key];
       const images = Array.isArray(value) ? value : value ? [value] : [];
+      const removed = images[index];
 
-      return {
+      setInputs((previous) => ({
         ...previous,
         [key]: images.filter((_, i) => i !== index),
-      };
-    });
+      }));
 
-    // Keep previews aligned with inputs
-    setFilePreviews((previous) => {
-      const removed = previous[key]?.[index];
-      if (removed) URL.revokeObjectURL(removed);
+      // Free that image's local preview
+      if (typeof removed === "string") {
+        setFilePreviews((previous) => {
+          if (!previous[removed]) return previous;
 
-      return {
-        ...previous,
-        [key]: (previous[key] ?? []).filter((_, i) => i !== index),
-      };
-    });
-  }, []);
+          URL.revokeObjectURL(previous[removed]);
+          const next = { ...previous };
+          delete next[removed];
+          return next;
+        });
+      }
+    },
+    [inputs]
+  );
 
   const uploadFile = useCallback(
     async (key: string, file: File) => {
@@ -321,6 +350,9 @@ export function GenerateProvider({
         setError("Please use an image smaller than 26 MB.");
         return;
       }
+
+      const epoch = formEpochRef.current;
+      const sameForm = () => epoch === formEpochRef.current;
 
       // Per-field upload counter drives the "Uploading…" state
       setUploading((previous) => ({
@@ -344,6 +376,10 @@ export function GenerateProvider({
 
         const url = data.url;
 
+        // The user switched models meanwhile: this file
+        // belongs to the old form
+        if (!sameForm()) return;
+
         // VIDEO / AUDIO: single file per field
         if (isMedia) {
           updateInput(key, url);
@@ -353,7 +389,7 @@ export function GenerateProvider({
         // IMAGE: appended, with a local preview
         setFilePreviews((previous) => ({
           ...previous,
-          [key]: [...(previous[key] ?? []), URL.createObjectURL(file)],
+          [url]: URL.createObjectURL(file),
         }));
 
         setInputs((previous) => {
@@ -368,12 +404,17 @@ export function GenerateProvider({
         });
       } catch (err) {
         console.error(err);
-        setError(errorMessage(err, "Unable to upload the file."));
+        if (sameForm()) {
+          setError(errorMessage(err, "Unable to upload the file."));
+        }
       } finally {
-        setUploading((previous) => ({
-          ...previous,
-          [key]: Math.max(0, (previous[key] ?? 1) - 1),
-        }));
+        // A model change already reset the counters
+        if (sameForm()) {
+          setUploading((previous) => ({
+            ...previous,
+            [key]: Math.max(0, (previous[key] ?? 1) - 1),
+          }));
+        }
       }
     },
     [updateInput]
@@ -383,15 +424,34 @@ export function GenerateProvider({
   // POLLING
   // --------------------------------------------------
 
-  const pollPrediction = useCallback((predictionId: string) => {
+  const pollPrediction = useCallback((predictionId: string, run: number) => {
     // Stop eventually so a stuck or missing prediction
     // doesn't hit the API every 2s forever.
     const startedAt = Date.now();
     let consecutiveErrors = 0;
 
+    // A newer run (or model change) took over
+    const stale = () => run !== runRef.current;
+
+    // Give up, leaving a clear end state instead of a
+    // spinner that never stops
+    function stopPolling(message: string) {
+      if (stale()) return;
+
+      setError(message);
+      setResult((previous) =>
+        previous?.prediction.id === predictionId
+          ? {
+              ...previous,
+              prediction: { ...previous.prediction, status: "unknown" },
+            }
+          : previous
+      );
+    }
+
     function scheduleNext() {
       if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
-        setError(
+        stopPolling(
           "Stopped checking: generation took longer than 15 minutes. Check History for the final result."
         );
         return;
@@ -404,8 +464,8 @@ export function GenerateProvider({
       consecutiveErrors++;
 
       if (consecutiveErrors >= MAX_CONSECUTIVE_POLL_ERRORS) {
-        setError(
-          "Stopped checking: the prediction status could not be fetched."
+        stopPolling(
+          "Stopped checking: the prediction status could not be fetched. Check History for the final result."
         );
         return;
       }
@@ -414,6 +474,8 @@ export function GenerateProvider({
     }
 
     async function poll() {
+      if (stale()) return;
+
       try {
         const data = await fetchJson<{
           prediction?: Prediction;
@@ -459,11 +521,14 @@ export function GenerateProvider({
     setTimeout(poll, 1500);
   }, []);
 
+
   // --------------------------------------------------
   // GENERATE
   // --------------------------------------------------
 
   const generate = useCallback(async () => {
+    const run = ++runRef.current;
+
     setError("");
     setResult(null);
 
@@ -501,15 +566,20 @@ export function GenerateProvider({
         throw new Error("Replicate did not return a prediction.");
       }
 
+      // The user changed model while this was starting
+      if (run !== runRef.current) return;
+
       setResult({
         prediction: { ...data.prediction, id: predictionId },
         costUsd: predictionCost(data.prediction, data.costUsd),
       });
 
-      pollPrediction(predictionId);
+      pollPrediction(predictionId, run);
     } catch (err) {
       console.error(err);
-      setError(errorMessage(err, "Generation failed."));
+      if (run === runRef.current) {
+        setError(errorMessage(err, "Generation failed."));
+      }
     } finally {
       setGenerating(false);
     }

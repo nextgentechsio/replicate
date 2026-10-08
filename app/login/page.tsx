@@ -3,6 +3,7 @@
 import { useState } from "react";
 import ThemeToggle from "@/app/components/ThemeToggle";
 import { NaarLogo } from "@/app/components/ui/NaarLogo";
+import { safeNextPath } from "@/lib/safe-next";
 import {
   Alert,
   Button,
@@ -11,25 +12,6 @@ import {
   inputClass,
   Spinner,
 } from "@/app/components/ui/primitives";
-
-// Only allow same-origin relative paths, so ?next= can't
-// be used as an open redirect.
-function safeNextPath(): string {
-  const next = new URLSearchParams(
-    window.location.search
-  ).get("next");
-
-  if (
-    !next ||
-    !next.startsWith("/") ||
-    next.startsWith("//") ||
-    next.startsWith("/\\")
-  ) {
-    return "/";
-  }
-
-  return next;
-}
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -61,7 +43,12 @@ export default function LoginPage() {
         throw new Error(data.error || "Login failed");
       }
 
-      window.location.assign(safeNextPath());
+      window.location.assign(
+        safeNextPath(
+          new URLSearchParams(window.location.search).get("next"),
+          window.location.origin
+        )
+      );
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Login failed"

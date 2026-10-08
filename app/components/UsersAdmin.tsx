@@ -284,10 +284,10 @@ export default function UsersAdmin({
           </h2>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-sm text-fg">
+            <label className="block space-y-2">
+              <span className="block text-sm text-fg">
                 Username
-              </label>
+              </span>
 
               <input
                 value={form.username}
@@ -303,12 +303,12 @@ export default function UsersAdmin({
                 placeholder="e.g. sabina"
                 className={inputClass}
               />
-            </div>
+            </label>
 
-            <div className="space-y-2">
-              <label className="text-sm text-fg">
+            <label className="block space-y-2">
+              <span className="block text-sm text-fg">
                 Display name
-              </label>
+              </span>
 
               <input
                 value={form.name}
@@ -323,12 +323,12 @@ export default function UsersAdmin({
                 placeholder="e.g. Sabina"
                 className={inputClass}
               />
-            </div>
+            </label>
 
-            <div className="space-y-2">
-              <label className="text-sm text-fg">
+            <label className="block space-y-2">
+              <span className="block text-sm text-fg">
                 Role
-              </label>
+              </span>
 
               <select
                 value={form.role}
@@ -352,14 +352,14 @@ export default function UsersAdmin({
                   </option>
                 ))}
               </select>
-            </div>
+            </label>
 
-            <div className="space-y-2">
-              <label className="text-sm text-fg">
+            <label className="block space-y-2">
+              <span className="block text-sm text-fg">
                 {form.mode === "create"
                   ? "Password"
                   : "New password"}
-              </label>
+              </span>
 
               <input
                 type="password"
@@ -380,7 +380,7 @@ export default function UsersAdmin({
                 }
                 className={inputClass}
               />
-            </div>
+            </label>
           </div>
 
           <div className="flex gap-2">

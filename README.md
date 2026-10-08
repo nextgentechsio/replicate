@@ -20,6 +20,19 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Testing
+
+```bash
+npm test                  # everything
+npm run test:unit         # fast: pricing, roles, sessions, input shaping
+npm run test:integration  # the built app over HTTP
+```
+
+Integration tests build the app and run it against an **in-memory MongoDB** and a
+**fake Replicate API** (`tests/integration/fake-replicate.ts`), so they never touch
+the real database and never spend money. Set `SKIP_BUILD=1` to reuse an existing
+build. Every bug fix should come with a test that fails without it.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

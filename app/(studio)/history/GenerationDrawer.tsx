@@ -19,6 +19,7 @@ import { formatDateTime, formatDuration } from "@/lib/client/format";
 import { errorMessage } from "@/lib/client/http";
 import { downloadOutput } from "@/lib/client/outputs";
 import { modelLabel } from "@/lib/model-catalog";
+import { useDialog } from "@/app/(studio)/_components/useDialog";
 import OutputPreview, { isRunningStatus } from "./OutputPreview";
 
 // --------------------------------------------------
@@ -33,6 +34,7 @@ function StatusBadge({ status }: { status: string }) {
   if (status === "succeeded") return <Badge tone="success">Succeeded</Badge>;
   if (status === "failed") return <Badge tone="danger">Failed</Badge>;
   if (status === "canceled") return <Badge tone="danger">Canceled</Badge>;
+  if (status === "unknown") return <Badge tone="warning">Lost</Badge>;
   if (isRunningStatus(status)) return <Badge tone="accent">Running</Badge>;
   return <Badge>{status}</Badge>;
 }
@@ -60,13 +62,15 @@ export default function GenerationDrawer({
   }>({ id: "" });
   const [notice, setNotice] = useState("");
 
-  const closeButton = useRef<HTMLButtonElement>(null);
-
   const current = loaded.id === id ? loaded : undefined;
   const generation: PublicGeneration | undefined = current?.detail ?? preview;
   const loadError = current?.error ?? "";
 
-  // Load the full record (state only set in callbacks)
+  // Load the full record (state only set in callbacks).
+  // Reloaded when the grid sees the status change, so a
+  // running generation shows its result when it finishes.
+  const listStatus = preview?.status;
+
   useEffect(() => {
     let cancelled = false;
 
@@ -86,28 +90,11 @@ export default function GenerationDrawer({
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, listStatus]);
 
-  // Focus the dialog, close on Escape, lock page scroll,
-  // and give focus back to the tile afterwards
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    closeButton.current?.focus();
-
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    document.addEventListener("keydown", onKey);
-
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = overflow;
-      previouslyFocused?.focus?.();
-    };
-  }, [onClose]);
+  // Focus trap, Escape, scroll lock, focus restore
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialog(dialogRef, onClose);
 
   function runAgain() {
     const detail = current?.detail;
@@ -184,7 +171,10 @@ export default function GenerationDrawer({
         onClick={onClose}
       />
 
-      <aside className="relative flex h-full w-full max-w-xl flex-col border-l border-line bg-surface shadow-xl">
+      <aside
+        ref={dialogRef}
+        className="relative flex h-full w-full max-w-xl flex-col border-l border-line bg-surface shadow-xl"
+      >
         <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
           <div className="min-w-0">
             <h2
@@ -202,7 +192,7 @@ export default function GenerationDrawer({
           </div>
 
           <Button
-            ref={closeButton}
+            data-autofocus
             size="sm"
             variant="ghost"
             icon="close"

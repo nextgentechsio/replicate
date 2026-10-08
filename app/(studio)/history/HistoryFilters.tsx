@@ -44,20 +44,30 @@ export default function HistoryFilters({
   onClear: () => void;
 }) {
   // Typing updates the URL after a short pause, not on
-  // every keystroke. The input follows the URL when it
-  // changes from elsewhere (Clear, Back).
+  // every keystroke. The input follows the URL only when
+  // it changes from elsewhere (Clear, Back): the echo of
+  // our own update must not wipe what was typed since.
   const [draft, setDraft] = useState(values.q);
   const [syncedQ, setSyncedQ] = useState(values.q);
+  const [pushedQ, setPushedQ] = useState(values.q);
 
   if (values.q !== syncedQ) {
     setSyncedQ(values.q);
-    setDraft(values.q);
+
+    if (values.q !== pushedQ) {
+      setPushedQ(values.q);
+      setDraft(values.q);
+    }
   }
 
   useEffect(() => {
-    if (draft.trim() === values.q) return;
+    const q = draft.trim();
+    if (q === values.q) return;
 
-    const timer = setTimeout(() => onChange({ q: draft.trim() }), 350);
+    const timer = setTimeout(() => {
+      setPushedQ(q);
+      onChange({ q });
+    }, 350);
     return () => clearTimeout(timer);
   }, [draft, values.q, onChange]);
 

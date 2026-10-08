@@ -76,7 +76,8 @@ export default function DashboardView() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {[
-          ["Total Generations", String(total)],
+          // "—" until loaded (or if loading failed), not "0"
+          ["Total Generations", history.data ? String(total) : "—"],
           ["Total Spend", formatUsd4(totalSpend)],
           ["Today", formatUsd4(todaySpend)],
           [

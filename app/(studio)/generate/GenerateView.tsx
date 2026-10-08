@@ -724,7 +724,9 @@ export default function GenerateView() {
                       ? "success"
                       : status === "failed" || status === "canceled"
                         ? "danger"
-                        : "accent"
+                        : status === "unknown"
+                          ? "warning"
+                          : "accent"
                   }
                 >
                   {status}
@@ -818,6 +820,16 @@ export default function GenerateView() {
                     </div>
                   </dl>
                 </div>
+              ) : status === "unknown" ? (
+                // Polling gave up; the server still finishes
+                // the run and records it in History
+                <Alert tone="warning">
+                  <p className="font-medium">Still waiting on Replicate</p>
+                  <p className="mt-0.5 text-xs opacity-90">
+                    We stopped checking here, but the run is tracked: its
+                    result and cost will appear in History.
+                  </p>
+                </Alert>
               ) : status === "failed" || status === "canceled" ? (
                 <Alert>
                   <p className="font-medium">Generation {status}</p>

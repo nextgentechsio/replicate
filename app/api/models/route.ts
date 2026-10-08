@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
+import { replicateApiUrl, upstreamStatus } from "@/lib/replicate-api";
 
 type ReplicateModel = {
   owner: string;
@@ -24,10 +25,9 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
-    const search = searchParams.get("search")?.trim() || "";
+    const search = (searchParams.get("search") ?? "").trim().slice(0, 100);
 
-    let url =
-      "https://api.replicate.com/v1/models";
+    let url = replicateApiUrl("models");
 
     if (search) {
       url += `?${new URLSearchParams({
@@ -46,15 +46,12 @@ export async function GET(request: Request) {
       results?: ReplicateModel[];
       next?: string | null;
       previous?: string | null;
-    } = await response.json();
+    } = await response.json().catch(() => ({}));
 
     if (!response.ok) {
       return NextResponse.json(
-        {
-          error: "Failed to fetch Replicate models",
-          details: data,
-        },
-        { status: response.status }
+        { error: "Failed to fetch Replicate models" },
+        { status: upstreamStatus(response.status) }
       );
     }
 

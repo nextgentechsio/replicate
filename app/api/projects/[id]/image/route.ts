@@ -94,9 +94,16 @@ export async function PUT(
   try {
     const { id } = await context.params;
 
-    const declared = Number(
-      request.headers.get("content-length") ?? 0
-    );
+    // A body without a declared size (chunked) could be
+    // any size, and formData() would buffer all of it
+    const declared = Number(request.headers.get("content-length"));
+
+    if (!declared) {
+      return NextResponse.json(
+        { error: "Upload size is required" },
+        { status: 411 }
+      );
+    }
 
     if (declared > MAX_REQUEST_BYTES) {
       return NextResponse.json(

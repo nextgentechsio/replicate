@@ -1,16 +1,21 @@
+type Input = Record<string, unknown>;
+
+// Loose on purpose: it's whatever Replicate (or the cost
+// preview) hands us, so every field is checked before use
 type Prediction = {
-  status?: string;
-  input?: Record<string, any>;
-  output?: any;
-  logs?: string;
+  status?: unknown;
+  input?: Input;
+  output?: unknown;
+  logs?: unknown;
 
   metrics?: {
-    predict_time?: number;
-    total_time?: number;
+    predict_time?: unknown;
+    total_time?: unknown;
+    cost?: unknown;
   };
 
-  costUsd?: number;
-  cost?: number;
+  costUsd?: unknown;
+  cost?: unknown;
 };
 
 /* =========================================================
@@ -53,20 +58,28 @@ export const MODEL_IDS = {
    HELPERS
 ========================================================= */
 
+// Real numbers and numeric strings only: Number(null),
+// Number("") and Number(false) are 0, which would turn
+// "no value" into a $0 price or a zero duration.
 function numberValue(
-  value: any,
+  value: unknown,
   fallback = 0
 ): number {
-  const n = Number(value);
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : fallback;
+  }
 
-  return Number.isFinite(n)
-    ? n
-    : fallback;
+  if (typeof value === "string" && value.trim() !== "") {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  return fallback;
 }
 
 
 function lower(
-  value: any
+  value: unknown
 ): string {
   return String(
     value ?? ""
@@ -78,7 +91,7 @@ function lower(
 
 function getInput(
   prediction: Prediction
-): Record<string, any> {
+): Input {
   return (
     prediction?.input ?? {}
   );
@@ -86,7 +99,7 @@ function getInput(
 
 
 function getResolution(
-  input: Record<string, any>,
+  input: Input,
   fallback = ""
 ): string {
   return lower(
@@ -99,21 +112,25 @@ function getResolution(
 }
 
 
+// A missing or non-positive duration is treated like
+// the model default, so a price is never negative
 function getDuration(
-  input: Record<string, any>,
+  input: Input,
   fallback = 5
 ): number {
-  return numberValue(
+  const duration = numberValue(
     input.duration ??
       input.video_duration ??
       input.output_duration,
     fallback
   );
+
+  return duration > 0 ? duration : fallback;
 }
 
 
 function hasVideoInput(
-  input: Record<string, any>
+  input: Input
 ): boolean {
   return Boolean(
     input.video ??
@@ -125,7 +142,7 @@ function hasVideoInput(
 
 
 function getQuality(
-  input: Record<string, any>
+  input: Input
 ): string {
   return lower(
     input.quality ??
@@ -154,7 +171,7 @@ function getOutputMegapixels(
      Direct MP value
   ----------------------------------------- */
 
-  let mp =
+  const mp =
     numberValue(
       input.output_megapixels ??
         input.megapixels ??
@@ -289,7 +306,7 @@ function getDirectCost(
   const candidates = [
     prediction?.costUsd,
     prediction?.cost,
-    (prediction as any)?.metrics?.cost,
+    prediction?.metrics?.cost,
   ];
 
   for (
@@ -316,7 +333,21 @@ function getDirectCost(
    MAIN COST CALCULATOR
 ========================================================= */
 
+// Prices are rounded to 1/10,000 of a cent, so per-second
+// maths (5 × 0.168 = 0.8400000000000001) doesn't leak
+// float noise into the ledger and its totals.
 export function calculateReplicateCost(
+  model: string,
+  prediction: Prediction
+): number | null {
+  const cost = computeReplicateCost(model, prediction);
+
+  return cost === null
+    ? null
+    : Math.round(cost * 1_000_000) / 1_000_000;
+}
+
+function computeReplicateCost(
   model: string,
   prediction: Prediction
 ): number | null {
@@ -962,11 +993,22 @@ export function calculateReplicateCost(
       60fps = $0.747 / 5 sec
     */
 
-    const duration =
-      getDuration(
-        input,
-        5
-      );
+    /*
+      The input is a video file, so its length isn't in
+      the inputs. Without a known duration, don't guess
+      (assuming 5s under-reported a 60s upscale 12x).
+    */
+
+    const duration = numberValue(
+      input.duration ??
+        input.video_duration ??
+        input.output_duration,
+      0
+    );
+
+    if (duration <= 0) {
+      return null;
+    }
 
 
     const fps =

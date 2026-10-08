@@ -5,6 +5,7 @@ import {
   type GenerationDoc,
 } from "@/lib/mongodb";
 import { canManageUsers } from "@/lib/roles";
+import { currentNames } from "@/lib/names";
 import type { StoredUser } from "@/lib/users";
 
 // --------------------------------------------------
@@ -279,6 +280,24 @@ export async function getExpenseReport(
     .limit(entryLimit)
     .toArray();
 
+  const byProject = readGroups(result?.byProject);
+  const byUser = readGroups(result?.byUser);
+  const publicEntries = entries.map(toPublicExpense);
+
+  // Show today's names after a rename
+  const names = await currentNames(
+    [...byProject.map((group) => group.id), ...entries.map((entry) => entry.projectId)],
+    [...byUser.map((group) => group.id), ...entries.map((entry) => entry.userId)]
+  );
+
+  for (const entry of publicEntries) {
+    entry.project = names.projects.get(entry.projectId) ?? entry.project;
+    entry.user = names.users.get(entry.userId) ?? entry.user;
+  }
+
+  const rename = (groups: SpendGroup[], map: Map<string, string>) =>
+    groups.map((group) => ({ ...group, name: map.get(group.id) ?? group.name }));
+
   return {
     totals: {
       today: readTotal(result?.today),
@@ -286,8 +305,8 @@ export async function getExpenseReport(
       month: readTotal(result?.month),
       allTime: readTotal(result?.allTime),
     },
-    byProject: readGroups(result?.byProject),
-    byUser: readGroups(result?.byUser),
-    entries: entries.map(toPublicExpense),
+    byProject: rename(byProject, names.projects),
+    byUser: rename(byUser, names.users),
+    entries: publicEntries,
   };
 }

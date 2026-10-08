@@ -1,5 +1,20 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
+import {
+  readReplicateJson,
+  replicateApiUrl,
+  replicateErrorMessage,
+  upstreamStatus,
+} from "@/lib/replicate-api";
+
+type SearchItem = {
+  owner?: string;
+  name?: string;
+  description?: string | null;
+  url?: string | null;
+  cover_image_url?: string | null;
+  run_count?: number;
+};
 
 export async function GET(request: Request) {
   const auth = await requireUser();
@@ -16,7 +31,7 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
-    const query = searchParams.get("q")?.trim() || "";
+    const query = (searchParams.get("q") ?? "").trim().slice(0, 100);
 
     if (!query) {
       return NextResponse.json({
@@ -25,7 +40,8 @@ export async function GET(request: Request) {
     }
 
     const replicateUrl =
-      "https://api.replicate.com/v1/search?" +
+      replicateApiUrl("search") +
+      "?" +
       new URLSearchParams({
         query,
         limit: "50",
@@ -38,19 +54,19 @@ export async function GET(request: Request) {
       cache: "no-store",
     });
 
-    const data = await response.json();
+    const data = await readReplicateJson(response);
 
     if (!response.ok) {
       return NextResponse.json(
-        {
-          error: data.detail || "Replicate search failed",
-        },
-        { status: response.status }
+        { error: replicateErrorMessage(data, "Replicate search failed") },
+        { status: upstreamStatus(response.status) }
       );
     }
 
-    const models = (data.models || []).map((item: any) => {
-      const model = item.model || item;
+    const items = Array.isArray(data.models) ? data.models : [];
+
+    const models = items.map((item: { model?: SearchItem } & SearchItem) => {
+      const model: SearchItem = item.model ?? item;
 
       return {
         id: `${model.owner}/${model.name}`,

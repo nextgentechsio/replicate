@@ -407,10 +407,23 @@ export function EmptyState({
 export function formatCost(
   amount: number | null | undefined
 ): string {
-  if (amount === null || amount === undefined) return "—";
+  if (
+    amount === null ||
+    amount === undefined ||
+    !Number.isFinite(amount)
+  ) {
+    return "—";
+  }
+
   if (amount === 0) return "$0.00";
 
-  return amount >= 1
-    ? `$${amount.toFixed(2)}`
-    : `$${amount.toFixed(3)}`;
+  const sign = amount < 0 ? "-" : "";
+  const value = Math.abs(amount);
+
+  // Never show a real charge as "$0.000"
+  if (value < 0.001) return `${sign}<$0.001`;
+
+  return value >= 1
+    ? `${sign}$${value.toFixed(2)}`
+    : `${sign}$${value.toFixed(3)}`;
 }

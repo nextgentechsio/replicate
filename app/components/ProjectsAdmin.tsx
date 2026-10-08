@@ -297,7 +297,10 @@ export default function ProjectsAdmin({
       setForm(null);
       await afterChange(message);
     } catch (err) {
-      setForm({ ...form, mode: "edit", id: projectId });
+      // Keep anything typed while saving
+      setForm((current) =>
+        current ? { ...current, mode: "edit", id: projectId } : current
+      );
       await afterChange("");
       setError(
         `Saved ${form.name}, but the photo was not ${
@@ -458,10 +461,10 @@ export default function ProjectsAdmin({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm text-fg">
+          <label className="block space-y-2">
+            <span className="block text-sm text-fg">
               Project name
-            </label>
+            </span>
 
             <input
               value={form.name}
@@ -474,12 +477,12 @@ export default function ProjectsAdmin({
               placeholder="e.g. Landmark"
               className={inputClass}
             />
-          </div>
+          </label>
 
-          <div className="space-y-2">
-            <label className="text-sm text-fg">
+          <label className="block space-y-2">
+            <span className="block text-sm text-fg">
               Description (optional)
-            </label>
+            </span>
 
             <textarea
               value={form.description}
@@ -493,7 +496,7 @@ export default function ProjectsAdmin({
               maxLength={500}
               className="w-full resize-y rounded-xl border border-line bg-sunken px-3 py-2 text-sm outline-none focus:border-accent"
             />
-          </div>
+          </label>
 
           <div className="flex gap-2">
             <button

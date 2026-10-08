@@ -21,6 +21,8 @@ export default function GenerationCard({
   const statusBadge =
     status === "failed" || status === "canceled" ? (
       <Badge tone="danger">{status === "failed" ? "Failed" : "Canceled"}</Badge>
+    ) : status === "unknown" ? (
+      <Badge tone="warning">Lost</Badge>
     ) : isRunningStatus(status) ? (
       <Badge tone="accent">Running</Badge>
     ) : null;

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import ThemeToggle from "@/app/components/ThemeToggle";
 import { Icon, type IconName } from "@/app/components/ui/Icon";
 import { NaarLogo } from "@/app/components/ui/NaarLogo";
@@ -17,6 +17,7 @@ import {
   ROLE_LABELS,
 } from "@/lib/roles";
 import { signOut, useStudio } from "./StudioProvider";
+import { useDialog } from "./useDialog";
 
 // --------------------------------------------------
 // STUDIO SHELL
@@ -209,37 +210,7 @@ export default function StudioShell({
       </aside>
 
       {/* MOBILE DRAWER */}
-      {navOpen && (
-        <div
-          className="fixed inset-0 z-50 lg:hidden"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Navigation"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") closeNav();
-          }}
-        >
-          <button
-            type="button"
-            aria-label="Close navigation"
-            className="absolute inset-0 bg-black/40"
-            onClick={closeNav}
-          />
-
-          <aside className="relative h-full w-72 max-w-[85vw] border-r border-line bg-surface shadow-xl">
-            <Button
-              size="sm"
-              variant="ghost"
-              icon="close"
-              aria-label="Close navigation"
-              autoFocus
-              onClick={closeNav}
-              className="absolute right-2 top-3"
-            />
-            {renderNav()}
-          </aside>
-        </div>
-      )}
+      {navOpen && <MobileDrawer onClose={closeNav}>{renderNav()}</MobileDrawer>}
 
       <div className="lg:pl-60">
         {/* TOP BAR */}
@@ -272,6 +243,51 @@ export default function StudioShell({
           {children}
         </main>
       </div>
+    </div>
+  );
+}
+
+// Navigation drawer for small screens (a modal dialog)
+function MobileDrawer({
+  onClose,
+  children,
+}: {
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const panel = useRef<HTMLElement>(null);
+  useDialog(panel, onClose);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 lg:hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Navigation"
+    >
+      <button
+        type="button"
+        aria-label="Close navigation"
+        tabIndex={-1}
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+      />
+
+      <aside
+        ref={panel}
+        className="relative h-full w-72 max-w-[85vw] border-r border-line bg-surface shadow-xl"
+      >
+        <Button
+          size="sm"
+          variant="ghost"
+          icon="close"
+          aria-label="Close navigation"
+          data-autofocus
+          onClick={onClose}
+          className="absolute right-2 top-3"
+        />
+        {children}
+      </aside>
     </div>
   );
 }

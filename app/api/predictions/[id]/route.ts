@@ -49,15 +49,18 @@ export async function GET(
     const result = await fetchPrediction(id);
 
     if (!result.ok) {
+      // Never pass Replicate's status through: its 401
+      // (our token) would look like the user's session
+      // ending, and sign them out
+      console.error("Fetch prediction failed:", id, result.status, result.error);
+
       return NextResponse.json(
-        { error: result.error },
-        { status: result.status }
+        { error: "Couldn't reach Replicate. Retrying…" },
+        { status: 502 }
       );
     }
 
     const prediction = result.prediction;
-
-    console.log("REPLICATE STATUS:", prediction.status);
 
     // IMPORTANT:
     // Never let history bookkeeping break polling.
@@ -104,12 +107,7 @@ export async function GET(
     console.error("Prediction fetch error:", error);
 
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Internal server error",
-      },
+      { error: "Couldn't check this generation" },
       { status: 500 }
     );
   }

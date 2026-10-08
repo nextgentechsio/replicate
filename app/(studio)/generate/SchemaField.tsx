@@ -229,7 +229,7 @@ export default function SchemaField({
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={filePreviews[key]?.[index] ?? String(image)}
+                      src={filePreviews[String(image)] ?? String(image)}
                       alt={`${label} ${index + 1}`}
                       className="h-full w-full object-cover"
                     />

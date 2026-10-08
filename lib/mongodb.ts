@@ -86,6 +86,8 @@ export type GenerationDoc = {
   outputUrl: string | null;
   localOutputUrl: string | null;
   predictTime: number | null;
+  // Reconcile attempts that found no prediction
+  reconcileFailures?: number;
   createdAt: Date;
   updatedAt: Date;
   completedAt: Date | null;

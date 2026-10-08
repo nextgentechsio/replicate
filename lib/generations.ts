@@ -1,11 +1,18 @@
 import fs from "fs/promises";
 import path from "path";
 import { recordExpense } from "@/lib/expenses";
+import { currentNames } from "@/lib/names";
 import type { Filter } from "mongodb";
 import {
   generationsCollection,
   type GenerationDoc,
 } from "@/lib/mongodb";
+import {
+  readReplicateJson,
+  replicateApiUrl,
+  replicateErrorMessage,
+  replicateHeaders,
+} from "@/lib/replicate-api";
 import { calculateReplicateCost } from "@/lib/replicate-cost";
 import { canManageUsers } from "@/lib/roles";
 import type { StoredUser } from "@/lib/users";
@@ -19,10 +26,13 @@ import type { StoredUser } from "@/lib/users";
 // Replicate (client polling or reconcilePending).
 // --------------------------------------------------
 
+// "unknown": Replicate lost the prediction (see
+// reconcilePending); never billed
 const TERMINAL_STATUSES = new Set([
   "succeeded",
   "failed",
   "canceled",
+  "unknown",
 ]);
 
 export function isTerminalStatus(status: unknown) {
@@ -218,8 +228,8 @@ function escapeRegex(value: string) {
 
 const STATUS_FILTERS: Record<HistoryStatus, Filter<GenerationDoc>> = {
   succeeded: { status: "succeeded" },
-  failed: { status: { $in: ["failed", "canceled"] } },
-  running: { status: { $nin: ["succeeded", "failed", "canceled"] } },
+  failed: { status: { $in: ["failed", "canceled", "unknown"] } },
+  running: { status: { $nin: [...TERMINAL_STATUSES] } },
 };
 
 export async function listGenerations(
@@ -230,7 +240,11 @@ export async function listGenerations(
     Math.max(1, Math.floor(query.pageSize ?? 24)),
     HISTORY_MAX_PAGE_SIZE
   );
-  const page = Math.max(1, Math.floor(query.page ?? 1));
+  const requestedPage = Math.floor(query.page ?? 1);
+  // Finite and bounded: skip(Infinity) makes Mongo throw
+  const page = Number.isFinite(requestedPage)
+    ? Math.min(Math.max(1, requestedPage), 100_000)
+    : 1;
 
   // Plain users see only their own generations, so a
   // user filter only applies to managers
@@ -253,7 +267,8 @@ export async function listGenerations(
   const [docs, total, projects, users, models] = await Promise.all([
     collection
       .find(filter)
-      .sort({ createdAt: -1 })
+      // _id breaks ties so pages never overlap or skip
+      .sort({ createdAt: -1, _id: -1 })
       .skip((page - 1) * pageSize)
       .limit(pageSize)
       .toArray(),
@@ -280,14 +295,29 @@ export async function listGenerations(
     collection.distinct("model", scope),
   ]);
 
+  // Show today's names after a rename
+  const names = await currentNames(
+    [...docs.map((doc) => doc.projectId), ...projects.map((item) => item._id)],
+    [...docs.map((doc) => doc.userId), ...users.map((item) => item._id)]
+  );
+
+  const named = (list: { _id: string; name: string }[], map: Map<string, string>) =>
+    list
+      .map((item) => ({ id: item._id, name: map.get(item._id) ?? item.name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
   return {
-    generations: docs.map(toPublicGeneration),
+    generations: docs.map((doc) => ({
+      ...toPublicGeneration(doc),
+      project: names.projects.get(doc.projectId) ?? doc.projectName,
+      user: names.users.get(doc.userId) ?? doc.userName,
+    })),
     total,
     page,
     pageSize,
     options: {
-      projects: projects.map((item) => ({ id: item._id, name: item.name })),
-      users: users.map((item) => ({ id: item._id, name: item.name })),
+      projects: named(projects, names.projects),
+      users: named(users, names.users),
       models: (models as string[]).sort(),
     },
   };
@@ -316,37 +346,28 @@ export async function fetchPrediction(
   | { ok: true; prediction: Record<string, unknown> }
   | { ok: false; status: number; error: string }
 > {
-  const token = process.env.REPLICATE_API_TOKEN;
+  const headers = replicateHeaders({ Accept: "application/json" });
 
-  if (!token) {
+  if (!headers) {
     return {
       ok: false,
       status: 500,
-      error: "REPLICATE_API_TOKEN is missing in .env.local",
+      error: "REPLICATE_API_TOKEN is missing",
     };
   }
 
   const response = await fetch(
-    `https://api.replicate.com/v1/predictions/${encodeURIComponent(id)}`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
-      cache: "no-store",
-    }
+    replicateApiUrl(`predictions/${encodeURIComponent(id)}`),
+    { headers, cache: "no-store" }
   );
 
-  const data = await response.json().catch(() => ({}));
+  const data = await readReplicateJson(response);
 
   if (!response.ok) {
     return {
       ok: false,
       status: response.status,
-      error:
-        data?.detail ||
-        data?.error ||
-        "Failed to fetch prediction",
+      error: replicateErrorMessage(data, "Failed to fetch prediction"),
     };
   }
 
@@ -430,6 +451,11 @@ async function saveReplicateOutput(
 // Store what Replicate told us about a prediction.
 // Cost is computed from the model stored at creation,
 // never from anything the client sends.
+//
+// Safe to call concurrently (browser polling and the
+// history reconcile can race): a finished record is
+// never overwritten, and the expense write is
+// idempotent.
 export async function applyPrediction(
   generation: GenerationDoc,
   prediction: Record<string, unknown>
@@ -440,8 +466,18 @@ export async function applyPrediction(
   const status = String(prediction.status ?? "");
   const terminal = isTerminalStatus(status);
 
-  // Already final: nothing new to record
+  // Already final. Make sure a succeeded run is billed
+  // (the expense write may have failed last time), but
+  // change nothing else.
   if (isTerminalStatus(generation.status)) {
+    if (generation.status === "succeeded") {
+      await recordExpense(
+        generation,
+        generation.costUsd,
+        generation.completedAt ?? generation.updatedAt
+      );
+    }
+
     return {
       costUsd: generation.costUsd,
       localOutputUrl: generation.localOutputUrl,
@@ -458,14 +494,14 @@ export async function applyPrediction(
 
   if (terminal) {
     try {
-      // Price from Replicate's echoed input; fall back
-      // to the inputs we stored if it's missing, so
-      // resolution/duration tiers aren't lost.
+      // Price from Replicate's echoed input over the inputs
+      // we stored: Replicate drops inputs after a while,
+      // and the tiers (resolution, duration) must survive.
+      const echoed = prediction.input as Record<string, unknown> | undefined;
+
       costUsd = calculateReplicateCost(generation.model, {
         ...prediction,
-        input:
-          (prediction.input as Record<string, unknown>) ??
-          generation.inputs,
+        input: { ...(generation.inputs ?? {}), ...(echoed ?? {}) },
       });
     } catch (costError) {
       console.error("Cost calculation error:", costError);
@@ -487,7 +523,7 @@ export async function applyPrediction(
     set.localOutputUrl = localOutputUrl;
     set.error =
       typeof prediction.error === "string"
-        ? prediction.error
+        ? prediction.error.slice(0, 2000)
         : null;
     set.predictTime =
       typeof metrics?.predict_time === "number"
@@ -496,23 +532,33 @@ export async function applyPrediction(
     set.completedAt = new Date();
   }
 
-  await (await generationsCollection()).updateOne(
-    { _id: generation._id },
-    { $set: set }
+  // Only a still-running record may change: if another
+  // request finished it meanwhile, keep that result.
+  const updated = await (await generationsCollection()).findOneAndUpdate(
+    { _id: generation._id, status: { $nin: [...TERMINAL_STATUSES] } },
+    { $set: set },
+    { returnDocument: "after" }
   );
+
+  if (!updated) {
+    const current = await getGeneration(generation._id);
+
+    return {
+      costUsd: current?.costUsd ?? null,
+      localOutputUrl: current?.localOutputUrl ?? null,
+    };
+  }
 
   // Bill succeeded generations in the expense ledger
   // (insert-only, so repeated polls can't double-count)
   if (status === "succeeded") {
-    await recordExpense(
-      generation,
-      costUsd,
-      set.completedAt ?? new Date()
-    );
+    await recordExpense(updated, costUsd, set.completedAt ?? new Date());
   }
 
   return { costUsd, localOutputUrl };
 }
+
+const MAX_RECONCILE_FAILURES = 5;
 
 // Finish records whose browser tab closed before the
 // prediction completed. Bounded so a page load stays fast.
@@ -522,10 +568,15 @@ export async function reconcilePending(
 ) {
   const olderThan = new Date(Date.now() - 15_000);
 
-  const pending = await (await generationsCollection())
+  const collection = await generationsCollection();
+
+  const pending = await collection
     .find({
       status: { $nin: [...TERMINAL_STATUSES] },
       createdAt: { $lt: olderThan },
+      // Predictions Replicate can't find are given up on
+      // after a few tries, so they can't block the rest
+      reconcileFailures: { $not: { $gte: MAX_RECONCILE_FAILURES } },
       ...(canManageUsers(actor) ? {} : { userId: actor.id }),
     })
     .sort({ createdAt: -1 })
@@ -538,6 +589,30 @@ export async function reconcilePending(
 
       if (result.ok) {
         await applyPrediction(generation, result.prediction);
+        return;
+      }
+
+      // Not found / gone: count it, and after the last
+      // try record it as unknown instead of retrying forever
+      if (result.status === 404 || result.status === 410) {
+        const failures = (generation.reconcileFailures ?? 0) + 1;
+
+        await collection.updateOne(
+          { _id: generation._id, status: { $nin: [...TERMINAL_STATUSES] } },
+          {
+            $set: {
+              reconcileFailures: failures,
+              updatedAt: new Date(),
+              ...(failures >= MAX_RECONCILE_FAILURES
+                ? {
+                    status: "unknown",
+                    error: "Replicate no longer has this prediction.",
+                    completedAt: new Date(),
+                  }
+                : {}),
+            },
+          }
+        );
       }
     })
   );

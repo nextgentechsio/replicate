@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import {
+  readReplicateJson,
+  replicateApiUrl,
+  replicateErrorMessage,
+  upstreamStatus,
+} from "@/lib/replicate-api";
+import {
   isValidModelId,
   modelPath,
 } from "@/lib/replicate-model";
@@ -37,7 +43,7 @@ export async function GET(request: Request) {
     }
 
     const response = await fetch(
-      `https://api.replicate.com/v1/models/${modelPath(model)}`,
+      replicateApiUrl(`models/${modelPath(model)}`),
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -46,51 +52,35 @@ export async function GET(request: Request) {
       }
     );
 
-    const data = await response.json();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any = await readReplicateJson(response);
 
     if (!response.ok) {
       return NextResponse.json(
-        {
-          error: data.detail || "Failed to fetch model schema",
-        },
-        { status: response.status }
+        { error: replicateErrorMessage(data, "Failed to fetch model schema") },
+        { status: upstreamStatus(response.status) }
       );
     }
 
-    const openapiSchema =
-  data.latest_version?.openapi_schema;
+    const openapiSchema = data.latest_version?.openapi_schema;
 
-const properties =
-  openapiSchema?.components?.schemas?.Input
-    ?.properties || {};
+    const properties: Record<string, Record<string, unknown>> =
+      openapiSchema?.components?.schemas?.Input?.properties || {};
 
-const components =
-  openapiSchema?.components?.schemas || {};
+    const components: Record<string, Record<string, unknown>> =
+      openapiSchema?.components?.schemas || {};
 
-const inputSchema = Object.fromEntries(
-  Object.entries(properties).map(
-    ([key, field]: [string, any]) => {
-      let resolvedField = field;
+    // Enums are referenced via allOf: [{ $ref }]; inline them
+    const inputSchema = Object.fromEntries(
+      Object.entries(properties).map(([key, field]) => {
+        const ref = (field?.allOf as { $ref?: string }[] | undefined)?.[0]
+          ?.$ref;
+        const referenced = ref ? components[ref.split("/").pop() ?? ""] : null;
 
-      if (field?.allOf?.[0]?.$ref) {
-        const refName =
-          field.allOf[0].$ref.split("/").pop();
+        return [key, referenced ? { ...referenced, ...field } : field];
+      })
+    );
 
-        const referencedSchema =
-          components[refName];
-
-        if (referencedSchema) {
-          resolvedField = {
-            ...referencedSchema,
-            ...field,
-          };
-        }
-      }
-
-      return [key, resolvedField];
-    }
-  )
-);
     return NextResponse.json({
       model: `${data.owner}/${data.name}`,
       description: data.description,

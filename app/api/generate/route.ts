@@ -2,472 +2,213 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { recordGeneration } from "@/lib/generations";
 import { findActiveProjectByName } from "@/lib/projects";
-import { calculateReplicateCost } from "@/lib/replicate-cost";
 import {
-  isValidModelId,
-  modelPath,
-} from "@/lib/replicate-model";
+  readReplicateJson,
+  replicateApiUrl,
+  replicateErrorMessage,
+  replicateHeaders,
+} from "@/lib/replicate-api";
+import { calculateReplicateCost } from "@/lib/replicate-cost";
+import { inputSchemaFromModel, shapeInputs } from "@/lib/replicate-inputs";
+import { isValidModelId, modelPath } from "@/lib/replicate-model";
 
 export const runtime = "nodejs";
 
-function isValidReplicateUri(value: unknown): value is string {
-  if (typeof value !== "string") return false;
+// --------------------------------------------------
+// START A GENERATION
+//
+// Validates the request, starts a Replicate prediction
+// and records it in MongoDB (status, cost and expense
+// are filled in later by /api/predictions/[id] and the
+// history reconcile). Spend is always attributed to the
+// signed-in account and an active project.
+// --------------------------------------------------
 
-  const valueTrimmed = value.trim();
+const RECORD_ATTEMPTS = 3;
+const MAX_INPUT_BYTES = 100_000;
 
-  return (
-    valueTrimmed.startsWith("https://") ||
-    valueTrimmed.startsWith("http://")
-  );
+function badRequest(error: string, status = 400) {
+  return NextResponse.json({ error }, { status });
 }
 
-function normalizeInputs(
-  rawInputs: Record<string, unknown>
-): Record<string, unknown> {
-  const inputs: Record<string, unknown> = {
-    ...rawInputs,
-  };
-
-  // START IMAGE
-  if (inputs.start_image !== undefined) {
-    if (Array.isArray(inputs.start_image)) {
-      const value = inputs.start_image.find(
-        isValidReplicateUri
-      );
-
-      if (value) {
-        inputs.start_image = value;
-      } else {
-        delete inputs.start_image;
-      }
-    } else if (
-      !isValidReplicateUri(inputs.start_image)
-    ) {
-      delete inputs.start_image;
-    }
-  }
-
-  // END IMAGE
-  if (inputs.end_image !== undefined) {
-    if (Array.isArray(inputs.end_image)) {
-      const value = inputs.end_image.find(
-        isValidReplicateUri
-      );
-
-      if (value) {
-        inputs.end_image = value;
-      } else {
-        delete inputs.end_image;
-      }
-    } else if (
-      !isValidReplicateUri(inputs.end_image)
-    ) {
-      delete inputs.end_image;
-    }
-  }
-
-  // REFERENCE IMAGES
-  if (inputs.reference_images !== undefined) {
-    let values: unknown[] = [];
-
-    if (Array.isArray(inputs.reference_images)) {
-      values = inputs.reference_images;
-    } else if (
-      typeof inputs.reference_images === "string"
-    ) {
-      values = [inputs.reference_images];
-    }
-
-    values = values.filter(isValidReplicateUri);
-
-    if (values.length > 0) {
-      inputs.reference_images = values;
-    } else {
-      delete inputs.reference_images;
-    }
-  }
-
-  // REFERENCE VIDEO
-  if (inputs.reference_video !== undefined) {
-    if (Array.isArray(inputs.reference_video)) {
-      const value = inputs.reference_video.find(
-        isValidReplicateUri
-      );
-
-      if (value) {
-        inputs.reference_video = value;
-      } else {
-        delete inputs.reference_video;
-      }
-    } else if (
-      !isValidReplicateUri(
-        inputs.reference_video
-      )
-    ) {
-      delete inputs.reference_video;
-    }
-  }
-  // --------------------------------------------------
-  // MULTI PROMPT
-  // Kling expects valid JSON
-  // --------------------------------------------------
-
-  if (inputs.multi_prompt !== undefined) {
-    if (typeof inputs.multi_prompt === "string") {
-      const value = inputs.multi_prompt.trim();
-
-      if (value) {
-        try {
-          JSON.parse(value);
-
-          inputs.multi_prompt = value;
-        } catch {
-          inputs.multi_prompt = JSON.stringify([
-            {
-              prompt: value,
-              duration: Number(inputs.duration) || 5,
-            },
-          ]);
-        }
-      } else {
-        delete inputs.multi_prompt;
-      }
-    }
-  }
-
-  return inputs;
-}
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function POST(request: Request) {
   const auth = await requireUser();
   if (auth.response) return auth.response;
 
+  const body = await request.json().catch(() => null);
+
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return badRequest("Invalid request body");
+  }
+
+  const { project, model, inputs } = body as Record<string, unknown>;
+
+  // ---------- Validation ----------
+
+  if (typeof project !== "string" || !project.trim()) {
+    return badRequest("Project is required");
+  }
+
+  if (typeof model !== "string" || !model) {
+    return badRequest("Model is required");
+  }
+
+  if (!isValidModelId(model)) {
+    return badRequest("Invalid model ID");
+  }
+
+  if (!inputs || typeof inputs !== "object" || Array.isArray(inputs)) {
+    return badRequest("Model inputs are required");
+  }
+
+  if (JSON.stringify(inputs).length > MAX_INPUT_BYTES) {
+    return badRequest("Model inputs are too large");
+  }
+
+  const headers = replicateHeaders({ "Content-Type": "application/json" });
+
+  if (!headers) {
+    console.error("REPLICATE_API_TOKEN is missing");
+    return badRequest("Generation is not configured on the server", 500);
+  }
+
   try {
-    const body = await request.json();
-
-    const {
-      project,
-      model,
-      inputs,
-    } = body;
-
-    // Attribute spend to the signed-in account, never
-    // to a name supplied by the client.
-    const user = auth.user.name;
-    const userId = auth.user.id;
-
-    // --------------------------------------------------
-    // VALIDATION
-    // --------------------------------------------------
-
-    if (!project) {
-      return NextResponse.json(
-        {
-          error: "Project is required",
-        },
-        { status: 400 }
-      );
-    }
-
     // Only active projects from the database can be billed
-    const projectRecord =
-      await findActiveProjectByName(project);
+    const projectRecord = await findActiveProjectByName(project);
 
     if (!projectRecord) {
-      return NextResponse.json(
-        {
-          error: "Unknown or archived project",
-        },
-        { status: 400 }
-      );
+      return badRequest("Unknown or archived project");
     }
 
-    if (!model) {
-      return NextResponse.json(
-        {
-          error: "Model is required",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!isValidModelId(model)) {
-      return NextResponse.json(
-        {
-          error: "Invalid model ID",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (
-      !inputs ||
-      typeof inputs !== "object" ||
-      Array.isArray(inputs)
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Model inputs are required",
-        },
-        { status: 400 }
-      );
-    }
-
-    const token =
-      process.env.REPLICATE_API_TOKEN;
-
-    if (!token) {
-      return NextResponse.json(
-        {
-          error:
-            "REPLICATE_API_TOKEN is missing in .env.local",
-        },
-        { status: 500 }
-      );
-    }
-
-    // --------------------------------------------------
-    // NORMALIZE INPUTS
-    // --------------------------------------------------
-
-    const normalizedInputs =
-      normalizeInputs(
-        inputs as Record<
-          string,
-          unknown
-        >
-      );
-
-    console.log(
-      "ORIGINAL INPUTS:",
-      inputs
-    );
-
-    console.log(
-      "NORMALIZED REPLICATE INPUTS:",
-      normalizedInputs
-    );
-
-    // --------------------------------------------------
-    // GET MODEL
-    // --------------------------------------------------
+    // ---------- Model (for its version and input schema) ----------
 
     const modelResponse = await fetch(
-      `https://api.replicate.com/v1/models/${modelPath(model)}`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        cache: "no-store",
-      }
+      replicateApiUrl(`models/${modelPath(model)}`),
+      { headers, cache: "no-store" }
     );
-
-    const modelData =
-      await modelResponse.json();
+    const modelData = await readReplicateJson(modelResponse);
 
     if (!modelResponse.ok) {
-      return NextResponse.json(
-        {
-          error:
-            modelData?.detail ||
-            "Failed to fetch selected model",
-          details: modelData,
-        },
-        {
-          status:
-            modelResponse.status,
-        }
+      return badRequest(
+        replicateErrorMessage(modelData, "Failed to fetch the selected model"),
+        modelResponse.status === 404 ? 404 : 502
       );
     }
 
-    const versionId =
-      modelData?.latest_version?.id;
+    const latestVersion = modelData.latest_version as
+      | { id?: string }
+      | undefined;
 
-    if (!versionId) {
-      return NextResponse.json(
-        {
-          error:
-            "Selected model does not have a runnable latest version.",
-        },
-        { status: 400 }
-      );
+    if (!latestVersion?.id) {
+      return badRequest("Selected model does not have a runnable version.");
     }
 
-    // --------------------------------------------------
-    // CREATE REPLICATE PREDICTION
-    // --------------------------------------------------
+    const shapedInputs = shapeInputs(
+      inputs as Record<string, unknown>,
+      inputSchemaFromModel(modelData)
+    );
 
-    console.log(
-      "CREATING REPLICATE PREDICTION:",
+    // ---------- Start the prediction ----------
+
+    const predictionResponse = await fetch(
+      replicateApiUrl(`models/${modelPath(model)}/predictions`),
       {
-        model,
-        versionId,
-        input: normalizedInputs,
+        method: "POST",
+        headers,
+        body: JSON.stringify({ input: shapedInputs }),
       }
     );
-
-   const predictionResponse = await fetch(
-  `https://api.replicate.com/v1/models/${modelPath(model)}/predictions`,
-  {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-  input: normalizedInputs,
-}),
-  }
-);
-
-    const predictionData =
-      await predictionResponse.json();
-
-    console.log(
-      "REPLICATE PREDICTION RESPONSE:",
-      predictionData
-    );
-
-    // --------------------------------------------------
-    // REPLICATE ERROR
-    // --------------------------------------------------
+    const prediction = await readReplicateJson(predictionResponse);
 
     if (!predictionResponse.ok) {
-      return NextResponse.json(
-        {
-          error:
-            predictionData?.detail ||
-            predictionData?.error ||
-            "Replicate prediction failed",
-
-          details:
-            predictionData,
-        },
-        {
-          status:
-            predictionResponse.status,
-        }
+      // 4xx from Replicate is about the inputs: show it
+      return badRequest(
+        replicateErrorMessage(prediction, "Replicate rejected the request"),
+        predictionResponse.status >= 500 ? 502 : 422
       );
     }
 
-    // --------------------------------------------------
-    // HISTORY (MongoDB)
-    //
-    // The prediction is already running (and billing) at
-    // this point, so a failed write must not fail the
-    // request — but it must be loud in the logs.
-    // --------------------------------------------------
+    const predictionId = typeof prediction.id === "string" ? prediction.id : "";
 
-    if (predictionData?.id) {
+    if (!predictionId) {
+      console.error("Replicate returned no prediction id", prediction);
+      return badRequest("Replicate did not start the generation", 502);
+    }
+
+    // ---------- Record it (or cancel it) ----------
+    //
+    // A running prediction that isn't in MongoDB would be
+    // billed by Replicate but never tracked. Retry the
+    // write; if it still fails, cancel the prediction.
+
+    let recorded = false;
+
+    for (let attempt = 1; attempt <= RECORD_ATTEMPTS && !recorded; attempt++) {
       try {
         await recordGeneration({
-          predictionId: predictionData.id,
+          predictionId,
           user: auth.user,
           project: projectRecord,
           model,
-          version: versionId,
-          inputs: normalizedInputs,
-          status: predictionData.status,
-          createdAt: predictionData.created_at,
+          version:
+            typeof prediction.version === "string"
+              ? prediction.version
+              : latestVersion.id,
+          inputs: shapedInputs,
+          status: String(prediction.status ?? "starting"),
+          createdAt:
+            typeof prediction.created_at === "string"
+              ? prediction.created_at
+              : undefined,
         });
-      } catch (historyError) {
+        recorded = true;
+      } catch (error) {
         console.error(
-          "FAILED TO RECORD GENERATION IN MONGODB:",
-          predictionData.id,
-          historyError
+          `Record generation failed (attempt ${attempt}):`,
+          predictionId,
+          error
         );
+        if (attempt < RECORD_ATTEMPTS) await sleep(250 * attempt);
       }
     }
 
-    // --------------------------------------------------
-    // COST
-    // --------------------------------------------------
+    if (!recorded) {
+      const cancel = await fetch(
+        replicateApiUrl(`predictions/${encodeURIComponent(predictionId)}/cancel`),
+        { method: "POST", headers }
+      ).catch(() => null);
 
-    const costUsd =
-      calculateReplicateCost(
-        model,
-        predictionData
+      console.error(
+        "UNTRACKED PREDICTION, cancel requested:",
+        predictionId,
+        cancel?.status ?? "cancel failed"
       );
 
-    console.log(
-      "REPLICATE COST:",
-      {
-        model,
-
-        resolution:
-          normalizedInputs?.resolution,
-
-        status:
-          predictionData?.status,
-
-        costUsd,
-      }
-    );
-
-    // --------------------------------------------------
-    // TRACKING
-    // --------------------------------------------------
-
-    const tracking = {
-      user,
-      userId,
-      project: projectRecord.name,
-      projectId: projectRecord.id,
-
-      provider:
-        "Replicate",
-
-      model,
-
-      version:
-        versionId,
-
-      predictionId:
-        predictionData?.id,
-
-      status:
-        predictionData?.status,
-
-      createdAt:
-        predictionData?.created_at,
-    };
-
-    console.log(
-      "FINOPS GENERATION:",
-      tracking
-    );
-
-    // --------------------------------------------------
-    // RESPONSE
-    // --------------------------------------------------
+      return badRequest(
+        "Couldn't save this run, so it was cancelled. Please try again.",
+        503
+      );
+    }
 
     return NextResponse.json({
       success: true,
-
-      tracking,
-
-      prediction:
-        predictionData,
-
-      costUsd,
+      tracking: {
+        predictionId,
+        project: projectRecord.name,
+        projectId: projectRecord.id,
+        model,
+        status: prediction.status,
+      },
+      prediction,
+      costUsd: calculateReplicateCost(model, {
+        ...prediction,
+        input: shapedInputs,
+      }),
     });
   } catch (error) {
-    console.error(
-      "Generate API error:",
-      error
-    );
-
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Internal server error",
-      },
-      {
-        status: 500,
-      }
-    );
+    console.error("Generate API error:", error);
+    return badRequest("Generation failed. Please try again.", 500);
   }
 }

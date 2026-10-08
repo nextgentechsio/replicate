@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useStudio } from "@/app/(studio)/_components/StudioProvider";
 import { Icon } from "@/app/components/ui/Icon";
 import {
@@ -65,7 +65,9 @@ export default function HistoryView() {
   const searchParams = useSearchParams();
 
   const filters = readFilters(searchParams);
-  const page = Math.max(1, Number(searchParams.get("page")) || 1);
+  // Whole, positive, finite page numbers only
+  const rawPage = Math.floor(Number(searchParams.get("page")));
+  const page = Number.isFinite(rawPage) && rawPage > 1 ? rawPage : 1;
   const viewId = searchParams.get("view");
 
   // What the API is asked for (the open drawer doesn't
@@ -123,11 +125,24 @@ export default function HistoryView() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const openGeneration = (id: string) => updateUrl({ view: id }, "push");
-  const closeGeneration = useCallback(
-    () => updateUrl({ view: null }, "replace"),
-    [updateUrl],
-  );
+  // Opening pushes a history entry, so closing goes Back
+  // (one Back press from the grid, not two). A drawer that
+  // came from a shared link has nothing to go back to.
+  const openedHereRef = useRef(false);
+
+  const openGeneration = (id: string) => {
+    openedHereRef.current = true;
+    updateUrl({ view: id }, "push");
+  };
+
+  const closeGeneration = useCallback(() => {
+    if (openedHereRef.current) {
+      openedHereRef.current = false;
+      router.back();
+    } else {
+      updateUrl({ view: null }, "replace");
+    }
+  }, [router, updateUrl]);
 
   // ---------- Data ----------
 
@@ -216,7 +231,7 @@ export default function HistoryView() {
       {result.error && result.key === listKey && <Alert>{result.error}</Alert>}
 
       {/* Count + pagination summary */}
-      {data && total > 0 && (
+      {data && generations.length > 0 && (
         <p className="text-sm text-fg-muted" aria-live="polite">
           Showing{" "}
           <span className="font-medium text-fg">
@@ -237,7 +252,17 @@ export default function HistoryView() {
         ) : null
       ) : !generations.length ? (
         <div className="rounded-xl border border-line bg-surface">
-          {filtered ? (
+          {page > 1 && total > 0 ? (
+            <EmptyState
+              icon="history"
+              title="This page is empty"
+              action={
+                <Button size="sm" onClick={() => goToPage(1)}>
+                  Back to page 1
+                </Button>
+              }
+            />
+          ) : filtered ? (
             <EmptyState
               icon="search"
               title="No generations match these filters"
@@ -245,16 +270,6 @@ export default function HistoryView() {
               action={
                 <Button size="sm" onClick={clearFilters}>
                   Clear filters
-                </Button>
-              }
-            />
-          ) : page > 1 ? (
-            <EmptyState
-              icon="history"
-              title="This page is empty"
-              action={
-                <Button size="sm" onClick={() => goToPage(1)}>
-                  Back to page 1
                 </Button>
               }
             />
