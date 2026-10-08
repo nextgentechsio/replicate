@@ -51,13 +51,20 @@ function applyTheme(choice: ThemeChoice) {
 const THEME_EVENT = "themechange";
 
 function subscribe(onChange: () => void) {
+  // Another tab changed the theme: repaint this one too,
+  // not just the toggle
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== null && event.key !== "theme") return;
+    applyTheme(readStoredTheme());
+    onChange();
+  };
+
   window.addEventListener(THEME_EVENT, onChange);
-  // Other tabs changing the theme
-  window.addEventListener("storage", onChange);
+  window.addEventListener("storage", onStorage);
 
   return () => {
     window.removeEventListener(THEME_EVENT, onChange);
-    window.removeEventListener("storage", onChange);
+    window.removeEventListener("storage", onStorage);
   };
 }
 

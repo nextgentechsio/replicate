@@ -17,6 +17,7 @@ import {
   ROLE_LABELS,
 } from "@/lib/roles";
 import { signOut, useStudio } from "./StudioProvider";
+import Greeting from "./Greeting";
 import { useDialog } from "./useDialog";
 
 // --------------------------------------------------
@@ -168,7 +169,12 @@ export default function StudioShell({
             </span>
           </div>
 
-          <div className="mt-1 grid grid-cols-2 gap-1">
+          <div className="mt-2 flex items-center justify-between gap-2 px-1.5">
+            <span className="text-xs text-fg-subtle">Theme</span>
+            <ThemeToggle />
+          </div>
+
+          <div className="mt-2 grid grid-cols-2 gap-1">
             <Link
               href="/account"
               onClick={closeNav}
@@ -226,14 +232,16 @@ export default function StudioShell({
               className="lg:hidden"
             />
 
-            {/* Desktop already shows the page heading and
-                the active nav item, so this is mobile only */}
+            {/* Phones: where am I. Desktop: a welcome (the
+                heading and active nav already say the page) */}
             <p className="truncate text-sm font-medium text-fg-muted lg:hidden">
               {pageTitle}
             </p>
-          </div>
 
-          <ThemeToggle />
+            <div className="hidden min-w-0 lg:block">
+              <Greeting name={currentUser.name} />
+            </div>
+          </div>
         </header>
 
         <main
