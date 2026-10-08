@@ -529,7 +529,7 @@ export default function ProjectsAdmin({
             {projects.map((project) => (
               <div
                 key={project.id}
-                className="grid items-center gap-3 px-5 py-4 md:grid-cols-[1fr_100px_auto]"
+                className="grid items-center gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_90px_220px]"
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <ProjectAvatar
@@ -551,8 +551,8 @@ export default function ProjectsAdmin({
                 <span
                   className={`text-xs ${
                     project.status === "active"
-                      ? "text-success"
-                      : "text-fg-muted"
+                      ? "text-fg-muted"
+                      : "font-medium text-warning"
                   }`}
                 >
                   {project.status === "active"

@@ -425,7 +425,7 @@ export default function UsersAdmin({
               return (
                 <div
                   key={user.id}
-                  className="grid items-center gap-3 px-5 py-4 md:grid-cols-[1fr_140px_100px_auto]"
+                  className="grid items-center gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_120px_90px_220px]"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-fg">
@@ -449,8 +449,8 @@ export default function UsersAdmin({
                   <span
                     className={`text-xs ${
                       user.disabled
-                        ? "text-danger"
-                        : "text-success"
+                        ? "font-medium text-danger"
+                        : "text-fg-muted"
                     }`}
                   >
                     {user.disabled ? "Disabled" : "Active"}

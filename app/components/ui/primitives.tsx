@@ -92,12 +92,16 @@ export function Field({
   hint,
   error,
   required,
+  hideLabel,
   children,
 }: {
   label: string;
   hint?: ReactNode;
   error?: string;
   required?: boolean;
+  // Still announced to screen readers; use when a
+  // heading right above already names the control
+  hideLabel?: boolean;
   children: (props: {
     id: string;
     "aria-describedby"?: string;
@@ -111,7 +115,10 @@ export function Field({
     <div className="space-y-1.5">
       <label
         htmlFor={id}
-        className="block text-sm font-medium text-fg"
+        className={cx(
+          "block text-sm font-medium text-fg",
+          hideLabel && "sr-only"
+        )}
       >
         {label}
         {required && (
@@ -208,6 +215,20 @@ export function StepHeader({
 
       {aside}
     </div>
+  );
+}
+
+// Step content, indented to line up with the step title
+// (badge 24px + gap 12px) so each card has one left edge
+export function StepBody({
+  className = "",
+  children,
+}: {
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cx("mt-4 sm:pl-9", className)}>{children}</div>
   );
 }
 
@@ -345,14 +366,21 @@ export function EmptyState({
   title,
   description,
   action,
+  compact,
 }: {
   icon: IconName;
   title: string;
   description?: string;
   action?: ReactNode;
+  compact?: boolean;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
+    <div
+      className={cx(
+        "flex flex-col items-center justify-center px-6 text-center",
+        compact ? "py-8" : "py-14"
+      )}
+    >
       <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-line bg-sunken text-fg-muted">
         <Icon name={icon} size={20} />
       </span>

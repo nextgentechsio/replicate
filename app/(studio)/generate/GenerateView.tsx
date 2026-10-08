@@ -16,6 +16,7 @@ import {
   inputClass,
   PageHeader,
   Spinner,
+  StepBody,
   StepHeader,
   textareaClass,
 } from "@/app/components/ui/primitives";
@@ -99,17 +100,17 @@ export default function GenerateView() {
   const orderedFields = orderSchemaFields(schema);
 
   const mediaFields = orderedFields.filter(
-    ([key, field]) => fieldGroup(key, field) === "media"
+    ([key, field]) => fieldGroup(key, field) === "media",
   );
   const mainFields = orderedFields.filter(
-    ([key, field]) => fieldGroup(key, field) === "main"
+    ([key, field]) => fieldGroup(key, field) === "main",
   );
   const advancedFields = orderedFields.filter(
-    ([key, field]) => fieldGroup(key, field) === "advanced"
+    ([key, field]) => fieldGroup(key, field) === "advanced",
   );
 
   const visibleCatalog = MODEL_CATALOG.filter(
-    (item) => catalogFilter === "all" || item.kind === catalogFilter
+    (item) => catalogFilter === "all" || item.kind === catalogFilter,
   );
 
   // ---------- Cost preview ----------
@@ -195,20 +196,19 @@ export default function GenerateView() {
               done={Boolean(project)}
             />
 
-            <div className="mt-4 flex max-w-md items-start gap-3">
-              {/* Offset = Field label + gap, so it lines up
-                  with the select, not the hint below it */}
+            {/* The step title names the control, so the
+                field label is for screen readers only */}
+            <StepBody className="flex max-w-xl items-start gap-3">
               <ProjectAvatar
                 name={project}
                 imageUrl={
                   projectList.find((item) => item.name === project)?.imageUrl
                 }
                 size={40}
-                className="mt-[26px]"
               />
 
               <div className="min-w-0 flex-1">
-                <Field label="Project" required hint={projectHint}>
+                <Field label="Project" hideLabel required hint={projectHint}>
                   {(control) => (
                     <select
                       {...control}
@@ -229,7 +229,7 @@ export default function GenerateView() {
                   )}
                 </Field>
               </div>
-            </div>
+            </StepBody>
           </Card>
 
           {/* STEP 2: MODEL */}
@@ -241,202 +241,210 @@ export default function GenerateView() {
               done={Boolean(model)}
             />
 
-            <div
-              role="group"
-              aria-label="Filter models by type"
-              className="mt-4 flex flex-wrap gap-1.5"
-            >
-              {(
-                [
-                  ["all", "All"],
-                  ["image", KIND_LABELS.image],
-                  ["video", KIND_LABELS.video],
-                  ["upscale", KIND_LABELS.upscale],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={catalogFilter === value}
-                  onClick={() => setCatalogFilter(value)}
-                  className={cx(
-                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                    catalogFilter === value
-                      ? "border-accent bg-accent-soft text-accent"
-                      : "border-line text-fg-muted hover:border-line-strong hover:text-fg"
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
-              {visibleCatalog.map((item) => {
-                const selected = model === item.id;
-
-                return (
+            <StepBody>
+              <div
+                role="group"
+                aria-label="Filter models by type"
+                className="flex flex-wrap gap-1.5"
+              >
+                {(
+                  [
+                    ["all", "All"],
+                    ["image", KIND_LABELS.image],
+                    ["video", KIND_LABELS.video],
+                    ["upscale", KIND_LABELS.upscale],
+                  ] as const
+                ).map(([value, label]) => (
                   <button
-                    key={item.id}
+                    key={value}
                     type="button"
-                    aria-pressed={selected}
-                    onClick={() => chooseModel(item.id)}
+                    aria-pressed={catalogFilter === value}
+                    onClick={() => setCatalogFilter(value)}
                     className={cx(
-                      "flex items-start gap-3 rounded-lg border p-3.5 text-left transition-colors",
-                      selected
-                        ? "border-accent bg-accent-soft ring-1 ring-accent"
-                        : "border-line bg-sunken hover:border-line-strong"
+                      "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                      catalogFilter === value
+                        ? "border-accent bg-accent-soft text-accent"
+                        : "border-line text-fg-muted hover:border-line-strong hover:text-fg",
                     )}
                   >
-                    <span
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+                {visibleCatalog.map((item) => {
+                  const selected = model === item.id;
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => chooseModel(item.id)}
                       className={cx(
-                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                        "flex h-full items-start gap-3 rounded-lg border p-3.5 text-left transition-colors",
                         selected
-                          ? "bg-accent text-on-accent"
-                          : "bg-raised text-fg-muted"
+                          ? "border-accent bg-accent-soft ring-1 ring-accent"
+                          : "border-line bg-sunken hover:border-line-strong",
                       )}
                     >
-                      <Icon
-                        name={item.kind === "upscale" ? "upscale" : item.kind}
-                        size={17}
-                      />
-                    </span>
+                      <span
+                        className={cx(
+                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                          selected
+                            ? "bg-accent text-on-accent"
+                            : "bg-raised text-fg-muted",
+                        )}
+                      >
+                        <Icon
+                          name={item.kind === "upscale" ? "upscale" : item.kind}
+                          size={17}
+                        />
+                      </span>
 
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-semibold text-fg">
-                          {item.label}
+                      <span className="flex min-w-0 flex-1 flex-col self-stretch">
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="truncate text-sm font-semibold text-fg">
+                            {item.label}
+                          </span>
+
+                          {selected && (
+                            <Icon
+                              name="check"
+                              size={16}
+                              className="text-accent"
+                              label="Selected"
+                            />
+                          )}
                         </span>
 
-                        {selected && (
-                          <Icon
-                            name="check"
-                            size={16}
-                            className="text-accent"
-                            label="Selected"
-                          />
-                        )}
+                        <span className="mt-0.5 block text-xs text-fg-subtle">
+                          {item.vendor} · {item.summary}
+                        </span>
+
+                        {/* Pinned to the bottom so prices line up
+                          across a row */}
+                        <span className="mt-auto pt-2 font-mono text-xs text-fg-muted">
+                          {item.priceHint}
+                        </span>
                       </span>
-
-                      <span className="mt-0.5 block text-xs text-fg-subtle">
-                        {item.vendor} · {item.summary}
-                      </span>
-
-                      <span className="mt-2 inline-block font-mono text-xs text-fg-muted">
-                        {item.priceHint}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Selected model from outside the catalog */}
-            {model && !catalogModel && (
-              <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3.5 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-fg">
-                    {model}
-                  </p>
-                  <p className="mt-0.5 text-xs text-warning">
-                    Unpriced model: runs are recorded in Expenses as unpriced
-                    ($0).
-                  </p>
-                </div>
-
-                <Button size="sm" variant="ghost" onClick={() => chooseModel("")}>
-                  Clear
-                </Button>
+                    </button>
+                  );
+                })}
               </div>
-            )}
 
-            {/* Escape hatch: any Replicate model */}
-            <div className="mt-4 border-t border-line pt-4">
-              <button
-                type="button"
-                aria-expanded={showOtherModels}
-                onClick={toggleOtherModels}
-                className="flex items-center gap-1.5 text-sm font-medium text-fg-muted hover:text-fg"
-              >
-                <Icon
-                  name="chevronDown"
-                  size={16}
-                  className={cx(
-                    "transition-transform",
-                    showOtherModels ? "" : "-rotate-90"
-                  )}
-                />
-                Use another Replicate model
-              </button>
-
-              {showOtherModels && (
-                <div className="mt-3 space-y-3">
-                  <Alert tone="warning">
-                    Models outside the approved list have no price on file.
-                    Their spend can&apos;t be tracked.
-                  </Alert>
-
-                  <div className="relative">
-                    <Icon
-                      name="search"
-                      size={16}
-                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-subtle"
-                    />
-
-                    <input
-                      type="search"
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                      placeholder="Search Replicate, e.g. flux or whisper"
-                      aria-label="Search Replicate models"
-                      className={cx(inputClass, "pl-9")}
-                    />
+              {/* Selected model from outside the catalog */}
+              {model && !catalogModel && (
+                <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3.5 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-fg">
+                      {model}
+                    </p>
+                    <p className="mt-0.5 text-xs text-warning">
+                      Unpriced model: runs are recorded in Expenses as unpriced
+                      ($0).
+                    </p>
                   </div>
 
-                  {searching ? (
-                    <p className="flex items-center gap-2 text-sm text-fg-muted">
-                      <Spinner /> Searching…
-                    </p>
-                  ) : search.trim() && search !== model ? (
-                    searchResults.length ? (
-                      <ul className="max-h-72 divide-y divide-line overflow-y-auto rounded-lg border border-line">
-                        {searchResults.map((item) => (
-                          <li key={item.id}>
-                            <button
-                              type="button"
-                              onClick={() => chooseModel(item.id, true)}
-                              className="block w-full px-3.5 py-3 text-left transition-colors hover:bg-raised"
-                            >
-                              <span className="flex items-center justify-between gap-2">
-                                <span className="truncate text-sm font-medium text-fg">
-                                  {item.id}
-                                </span>
-
-                                {findCatalogModel(item.id) ? (
-                                  <Badge tone="success">Approved</Badge>
-                                ) : (
-                                  <Badge tone="warning">Unpriced</Badge>
-                                )}
-                              </span>
-
-                              {item.description && (
-                                <span className="mt-0.5 line-clamp-2 block text-xs text-fg-subtle">
-                                  {item.description}
-                                </span>
-                              )}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-sm text-fg-subtle">
-                        No models match “{search.trim()}”.
-                      </p>
-                    )
-                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => chooseModel("")}
+                  >
+                    Clear
+                  </Button>
                 </div>
               )}
-            </div>
+
+              {/* Escape hatch: any Replicate model */}
+              <div className="mt-4 border-t border-line pt-4">
+                <button
+                  type="button"
+                  aria-expanded={showOtherModels}
+                  onClick={toggleOtherModels}
+                  className="flex items-center gap-1.5 text-sm font-medium text-fg-muted hover:text-fg"
+                >
+                  <Icon
+                    name="chevronDown"
+                    size={16}
+                    className={cx(
+                      "transition-transform",
+                      showOtherModels ? "" : "-rotate-90",
+                    )}
+                  />
+                  Use another Replicate model
+                </button>
+
+                {showOtherModels && (
+                  <div className="mt-3 space-y-3">
+                    <Alert tone="warning">
+                      Models outside the approved list have no price on file.
+                      Their spend can&apos;t be tracked.
+                    </Alert>
+
+                    <div className="relative">
+                      <Icon
+                        name="search"
+                        size={16}
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-subtle"
+                      />
+
+                      <input
+                        type="search"
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        placeholder="Search Replicate, e.g. flux or whisper"
+                        aria-label="Search Replicate models"
+                        className={cx(inputClass, "pl-9")}
+                      />
+                    </div>
+
+                    {searching ? (
+                      <p className="flex items-center gap-2 text-sm text-fg-muted">
+                        <Spinner /> Searching…
+                      </p>
+                    ) : search.trim() && search !== model ? (
+                      searchResults.length ? (
+                        <ul className="max-h-72 divide-y divide-line overflow-y-auto rounded-lg border border-line">
+                          {searchResults.map((item) => (
+                            <li key={item.id}>
+                              <button
+                                type="button"
+                                onClick={() => chooseModel(item.id, true)}
+                                className="block w-full px-3.5 py-3 text-left transition-colors hover:bg-raised"
+                              >
+                                <span className="flex items-center justify-between gap-2">
+                                  <span className="truncate text-sm font-medium text-fg">
+                                    {item.id}
+                                  </span>
+
+                                  {findCatalogModel(item.id) ? (
+                                    <Badge tone="success">Approved</Badge>
+                                  ) : (
+                                    <Badge tone="warning">Unpriced</Badge>
+                                  )}
+                                </span>
+
+                                {item.description && (
+                                  <span className="mt-0.5 line-clamp-2 block text-xs text-fg-subtle">
+                                    {item.description}
+                                  </span>
+                                )}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-fg-subtle">
+                          No models match “{search.trim()}”.
+                        </p>
+                      )
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </StepBody>
           </Card>
 
           {/* STEP 3: INPUTS */}
@@ -452,151 +460,160 @@ export default function GenerateView() {
                 }
               />
 
-              {schemaLoading ? (
-                <div
-                  className="mt-5 space-y-3"
-                  aria-busy="true"
-                  aria-label="Loading model settings"
-                >
-                  <div className="h-24 animate-pulse rounded-lg bg-raised" />
-                  <div className="h-10 w-2/3 animate-pulse rounded-lg bg-raised" />
-                  <div className="h-10 w-1/2 animate-pulse rounded-lg bg-raised" />
-                </div>
-              ) : (
-                // Remount per model so uncontrolled text
-                // areas reset with the new defaults
-                <div key={model} className="mt-5 space-y-5">
-                  {hasPrompt && (
-                    <Field
-                      label="Prompt"
-                      required
-                      hint="Describe what you want to create. Be specific about subject, style and lighting."
-                    >
-                      {(control) => (
-                        <StableTextArea
-                          {...control}
-                          rows={5}
-                          value={String(inputs.prompt ?? "")}
-                          onChange={(next) => updateInput("prompt", next)}
-                          placeholder="A product photo of a ceramic mug on a marble counter, soft morning light…"
-                          className={textareaClass}
-                        />
-                      )}
-                    </Field>
-                  )}
+              <StepBody>
+                {schemaLoading ? (
+                  <div
+                    className="space-y-3"
+                    aria-busy="true"
+                    aria-label="Loading model settings"
+                  >
+                    <div className="h-24 animate-pulse rounded-lg bg-raised" />
+                    <div className="h-10 w-2/3 animate-pulse rounded-lg bg-raised" />
+                    <div className="h-10 w-1/2 animate-pulse rounded-lg bg-raised" />
+                  </div>
+                ) : (
+                  // Remount per model so uncontrolled text
+                  // areas reset with the new defaults
+                  <div key={model} className="space-y-5">
+                    {hasPrompt && (
+                      <Field
+                        label="Prompt"
+                        required
+                        hint="Describe what you want to create. Be specific about subject, style and lighting."
+                      >
+                        {(control) => (
+                          <StableTextArea
+                            {...control}
+                            rows={5}
+                            value={String(inputs.prompt ?? "")}
+                            onChange={(next) => updateInput("prompt", next)}
+                            placeholder="A product photo of a ceramic mug on a marble counter, soft morning light…"
+                            className={textareaClass}
+                          />
+                        )}
+                      </Field>
+                    )}
 
-                  {(hasAspectRatio || hasResolution) && (
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      {hasAspectRatio && (
-                        <Field label="Aspect ratio">
-                          {(control) => (
-                            <select
-                              {...control}
-                              value={String(
-                                inputs.aspect_ratio ?? aspectRatioOptions[0]
-                              )}
-                              onChange={(event) =>
-                                updateInput("aspect_ratio", event.target.value)
-                              }
-                              className={inputClass}
-                            >
-                              {aspectRatioOptions.map((ratio) => (
-                                <option key={ratio} value={ratio}>
-                                  {ratio === "match_input_image"
-                                    ? "Match input image"
-                                    : ratio}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                        </Field>
-                      )}
+                    {(hasAspectRatio || hasResolution) && (
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        {hasAspectRatio && (
+                          <Field label="Aspect ratio">
+                            {(control) => (
+                              <select
+                                {...control}
+                                value={String(
+                                  inputs.aspect_ratio ?? aspectRatioOptions[0],
+                                )}
+                                onChange={(event) =>
+                                  updateInput(
+                                    "aspect_ratio",
+                                    event.target.value,
+                                  )
+                                }
+                                className={inputClass}
+                              >
+                                {aspectRatioOptions.map((ratio) => (
+                                  <option key={ratio} value={ratio}>
+                                    {ratio === "match_input_image"
+                                      ? "Match input image"
+                                      : ratio}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </Field>
+                        )}
 
-                      {hasResolution && (
-                        <Field
-                          label="Resolution"
-                          hint="Higher resolution costs more."
-                        >
-                          {(control) => (
-                            <select
-                              {...control}
-                              value={String(
-                                inputs.resolution ?? resolutionOptions[0]
-                              )}
-                              onChange={(event) =>
-                                updateInput("resolution", event.target.value)
-                              }
-                              className={inputClass}
-                            >
-                              {resolutionOptions.map((value) => (
-                                <option key={value} value={value}>
-                                  {value}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                        </Field>
-                      )}
-                    </div>
-                  )}
+                        {hasResolution && (
+                          <Field
+                            label="Resolution"
+                            hint="Higher resolution costs more."
+                          >
+                            {(control) => (
+                              <select
+                                {...control}
+                                value={String(
+                                  inputs.resolution ?? resolutionOptions[0],
+                                )}
+                                onChange={(event) =>
+                                  updateInput("resolution", event.target.value)
+                                }
+                                className={inputClass}
+                              >
+                                {resolutionOptions.map((value) => (
+                                  <option key={value} value={value}>
+                                    {value}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </Field>
+                        )}
+                      </div>
+                    )}
 
-                  {mediaFields.map(([key, field]) => (
-                    <SchemaField key={key} fieldKey={key} field={field} />
-                  ))}
+                    {mediaFields.map(([key, field]) => (
+                      <SchemaField key={key} fieldKey={key} field={field} />
+                    ))}
 
-                  {mainFields.length > 0 && (
-                    <div className="grid gap-5 sm:grid-cols-2">
-                      {mainFields.map(([key, field]) => (
-                        <div
-                          key={key}
-                          className={cx(
-                            // Long text and toggles span both columns
-                            (field.type === "boolean" ||
-                              /description|negative/i.test(key)) &&
-                              "sm:col-span-2"
-                          )}
-                        >
-                          <SchemaField fieldKey={key} field={field} />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {advancedFields.length > 0 && (
-                    <details className="group rounded-lg border border-line">
-                      <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium text-fg-muted hover:text-fg">
-                        <span>
-                          Advanced settings
-                          <span className="ml-1.5 text-fg-subtle">
-                            ({advancedFields.length})
-                          </span>
-                        </span>
-
-                        <Icon
-                          name="chevronDown"
-                          size={16}
-                          className="transition-transform group-open:rotate-180"
-                        />
-                      </summary>
-
-                      <div className="space-y-5 border-t border-line p-4">
-                        {advancedFields.map(([key, field]) => (
-                          <SchemaField key={key} fieldKey={key} field={field} />
+                    {mainFields.length > 0 && (
+                      <div className="grid gap-5 sm:grid-cols-2">
+                        {mainFields.map(([key, field]) => (
+                          <div
+                            key={key}
+                            className={cx(
+                              // Long text and toggles span both columns
+                              (field.type === "boolean" ||
+                                /description|negative/i.test(key)) &&
+                                "sm:col-span-2",
+                            )}
+                          >
+                            <SchemaField fieldKey={key} field={field} />
+                          </div>
                         ))}
                       </div>
-                    </details>
-                  )}
-
-                  {!hasPrompt &&
-                    !hasAspectRatio &&
-                    !hasResolution &&
-                    orderedFields.length === 0 && (
-                      <p className="text-sm text-fg-subtle">
-                        This model has no settings.
-                      </p>
                     )}
-                </div>
-              )}
+
+                    {advancedFields.length > 0 && (
+                      <details className="group rounded-lg border border-line">
+                        <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium text-fg-muted hover:text-fg">
+                          <span>
+                            Advanced settings
+                            <span className="ml-1.5 text-fg-subtle">
+                              ({advancedFields.length})
+                            </span>
+                          </span>
+
+                          <Icon
+                            name="chevronDown"
+                            size={16}
+                            className="transition-transform group-open:rotate-180"
+                          />
+                        </summary>
+
+                        <div className="space-y-5 border-t border-line p-4">
+                          {advancedFields.map(([key, field]) => (
+                            <SchemaField
+                              key={key}
+                              fieldKey={key}
+                              field={field}
+                            />
+                          ))}
+                        </div>
+                      </details>
+                    )}
+
+                    {!hasPrompt &&
+                      !hasAspectRatio &&
+                      !hasResolution &&
+                      orderedFields.length === 0 && (
+                        <p className="text-sm text-fg-subtle">
+                          This model has no settings.
+                        </p>
+                      )}
+                  </div>
+                )}
+              </StepBody>
             </Card>
           )}
         </div>
@@ -771,7 +788,7 @@ export default function GenerateView() {
                             url,
                             outputUrls.length > 1
                               ? `generation-${result!.prediction.id}-${index + 1}`
-                              : `generation-${result!.prediction.id}`
+                              : `generation-${result!.prediction.id}`,
                           )
                         }
                       >
@@ -809,6 +826,7 @@ export default function GenerateView() {
                 </Alert>
               ) : (
                 <EmptyState
+                  compact
                   icon="image"
                   title="Nothing generated yet"
                   description="Your result will appear here. It's also saved to History."

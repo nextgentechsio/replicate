@@ -255,7 +255,9 @@ export default function StudioShell({
               className="lg:hidden"
             />
 
-            <p className="truncate text-sm font-medium text-fg-muted">
+            {/* Desktop already shows the page heading and
+                the active nav item, so this is mobile only */}
+            <p className="truncate text-sm font-medium text-fg-muted lg:hidden">
               {pageTitle}
             </p>
           </div>
