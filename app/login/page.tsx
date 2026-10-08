@@ -10,6 +10,7 @@ import {
   eyebrowClass,
   Field,
   inputClass,
+  PasswordInput,
   Spinner,
 } from "@/app/components/ui/primitives";
 
@@ -138,16 +139,14 @@ export default function LoginPage() {
 
             <Field label="Password">
               {(control) => (
-                <input
+                <PasswordInput
                   {...control}
-                  type="password"
                   value={password}
                   onChange={(event) =>
                     setPassword(event.target.value)
                   }
                   autoComplete="current-password"
                   required
-                  className={inputClass}
                 />
               )}
             </Field>

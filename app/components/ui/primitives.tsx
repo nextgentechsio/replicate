@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "@/app/components/ui/Icon";
 
 // --------------------------------------------------
@@ -81,6 +81,41 @@ export function Button({
 
 export const inputClass =
   "h-10 w-full rounded-lg border border-line bg-sunken px-3 text-sm text-fg outline-none transition-colors placeholder:text-fg-subtle focus:border-accent disabled:opacity-60";
+
+// Password field with a show/hide (eye) button. Starts
+// hidden, and hides again after the form is submitted
+// or the page changes (state is per mount).
+export function PasswordInput({
+  className = "",
+  baseClassName = inputClass,
+  ...props
+}: Omit<React.ComponentPropsWithRef<"input">, "type"> & {
+  // Swap the field style to match a form that uses its own
+  baseClassName?: string;
+}) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div className="relative">
+      <input
+        {...props}
+        type={visible ? "text" : "password"}
+        className={cx(baseClassName, "pr-10", className)}
+      />
+
+      <button
+        type="button"
+        onClick={() => setVisible((value) => !value)}
+        aria-label={visible ? "Hide password" : "Show password"}
+        aria-pressed={visible}
+        title={visible ? "Hide password" : "Show password"}
+        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-lg text-fg-subtle transition-colors hover:text-fg focus-visible:text-fg"
+      >
+        <Icon name={visible ? "eyeOff" : "eye"} size={16} />
+      </button>
+    </div>
+  );
+}
 
 export const textareaClass =
   "w-full rounded-lg border border-line bg-sunken px-3 py-2.5 text-sm leading-6 text-fg outline-none transition-colors placeholder:text-fg-subtle focus:border-accent";

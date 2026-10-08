@@ -6,6 +6,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { PasswordInput } from "@/app/components/ui/primitives";
 import { formatLastSeen } from "@/lib/presence";
 import {
   assignableRoles,
@@ -405,8 +406,8 @@ export default function UsersAdmin({
                   : "New password"}
               </span>
 
-              <input
-                type="password"
+              <PasswordInput
+                baseClassName={inputClass}
                 value={form.password}
                 onChange={(event) =>
                   setForm({
@@ -422,7 +423,6 @@ export default function UsersAdmin({
                     ? "At least 8 characters"
                     : "Leave blank to keep current"
                 }
-                className={inputClass}
               />
             </label>
           </div>
