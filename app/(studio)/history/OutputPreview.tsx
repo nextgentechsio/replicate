@@ -19,10 +19,12 @@ export function isRunningStatus(status: string) {
 
 export default function OutputPreview({
   url,
+  contentType,
   status,
   variant,
 }: {
   url: string | null;
+  contentType?: string | null;
   status: string;
   variant: "thumb" | "full";
 }) {
@@ -30,7 +32,7 @@ export default function OutputPreview({
   // a broken image
   const [broken, setBroken] = useState(false);
 
-  const type = url ? getOutputType(url) : null;
+  const type = url ? getOutputType(url, contentType) : null;
   const thumb = variant === "thumb";
 
   if (isRunningStatus(status)) {

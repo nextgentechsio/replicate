@@ -129,15 +129,21 @@ function getDuration(
 }
 
 
+// Seedance takes `reference_videos` (a list); an empty
+// list means no video input
 function hasVideoInput(
   input: Input
 ): boolean {
-  return Boolean(
-    input.video ??
-      input.video_input ??
-      input.reference_video ??
-      input.video_url
-  );
+  const present = (value: unknown) =>
+    Array.isArray(value) ? value.length > 0 : Boolean(value);
+
+  return [
+    input.video,
+    input.video_input,
+    input.reference_video,
+    input.reference_videos,
+    input.video_url,
+  ].some(present);
 }
 
 
@@ -625,10 +631,11 @@ function computeReplicateCost(
       );
 
 
+    // The model's own default is "pro"
     const mode =
       lower(
         input.mode ??
-          "standard"
+          "pro"
       );
 
 
@@ -1108,47 +1115,17 @@ function computeReplicateCost(
         input
       );
 
+    // Priced per image: up to 10 per run. Count what came
+    // back when we know, else what was asked for.
+    const returned = Array.isArray(prediction.output)
+      ? prediction.output.length
+      : 0;
+    const images =
+      returned > 0
+        ? returned
+        : Math.max(1, Math.floor(numberValue(input.number_of_images, 1)));
 
-    if (
-      quality === "low"
-    ) {
-      return 0.012;
-    }
-
-
-    if (
-      quality === "medium"
-    ) {
-      return 0.047;
-    }
-
-
-    if (
-      quality === "high"
-    ) {
-      return 0.128;
-    }
-
-
-    if (
-      quality === "xhigh"
-    ) {
-      return 0.25;
-    }
-
-
-    if (
-      quality === "max"
-    ) {
-      return 0.50;
-    }
-
-
-    /*
-      Replicate's auto variant
-    */
-
-    return 0.25;
+    return images * gptImagePrice(quality);
   }
 
 
@@ -1161,4 +1138,19 @@ function computeReplicateCost(
   */
 
   return null;
+}
+
+// GPT Image 2.5 price per image, by quality variant
+const GPT_IMAGE_PRICES: Record<string, number> = {
+  low: 0.012,
+  medium: 0.047,
+  high: 0.128,
+  xhigh: 0.25,
+  max: 0.5,
+  // Replicate's "auto" variant
+  auto: 0.25,
+};
+
+function gptImagePrice(quality: string): number {
+  return GPT_IMAGE_PRICES[quality] ?? GPT_IMAGE_PRICES.auto;
 }

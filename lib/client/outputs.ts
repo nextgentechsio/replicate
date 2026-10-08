@@ -18,7 +18,17 @@ export function getOutputUrls(output: unknown): string[] {
   return [];
 }
 
-export function getOutputType(url: string): OutputType {
+// Prefer the stored content type; fall back to the URL's
+// file extension (Replicate links, older saved files)
+export function getOutputType(
+  url: string,
+  contentType?: string | null
+): OutputType {
+  const family = contentType?.split("/")[0];
+  if (family === "video" || family === "audio" || family === "image") {
+    return family;
+  }
+
   const pathname = (() => {
     try {
       return new URL(url, "http://local").pathname.toLowerCase();
@@ -62,10 +72,11 @@ export async function downloadOutput(
 ): Promise<void> {
   if (!url) throw new Error("Download URL is missing");
 
-  // Saved outputs (/history/...) are served by this app;
-  // remote Replicate URLs go through the download proxy.
+  // Saved outputs (/api/generations/..., older /history/)
+  // are served by this app; Replicate links go through
+  // the download proxy.
   const response = await fetch(
-    url.startsWith("/history/")
+    url.startsWith("/") && !url.startsWith("//")
       ? url
       : `/api/download?url=${encodeURIComponent(url)}`
   );

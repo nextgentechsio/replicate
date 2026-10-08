@@ -69,8 +69,8 @@ describe("calculateReplicateCost", () => {
   });
 
   it("prices per-second video by duration and never goes negative", () => {
-    expect(cost(MODEL_IDS.KLING_V3_OMNI, { duration: 10 })).toBeCloseTo(1.68);
-    expect(cost(MODEL_IDS.KLING_V3_OMNI, { duration: "10" })).toBeCloseTo(1.68);
+    expect(cost(MODEL_IDS.KLING_V3_OMNI, { duration: 10, mode: "standard" })).toBeCloseTo(1.68);
+    expect(cost(MODEL_IDS.KLING_V3_OMNI, { duration: "10", mode: "standard" })).toBeCloseTo(1.68);
     expect(
       cost(MODEL_IDS.KLING_V3_OMNI, { duration: 5, mode: "pro", generate_audio: true })
     ).toBeCloseTo(1.4);
@@ -109,7 +109,7 @@ describe("calculateReplicateCost", () => {
 
   it("returns money rounded to a sane precision", () => {
     // 5 × 0.168 is 0.8400000000000001 in floating point
-    expect(cost(MODEL_IDS.KLING_V3_OMNI, { duration: 5 })).toBe(0.84);
+    expect(cost(MODEL_IDS.KLING_V3_OMNI, { duration: 5, mode: "standard" })).toBe(0.84);
   });
 });
 
@@ -137,5 +137,30 @@ describe("Topaz video", () => {
     expect(
       cost(MODEL_IDS.TOPAZ_VIDEO, { duration: 60, target_resolution: "1080p" })
     ).toBeCloseTo(1.116);
+  });
+});
+
+// Checked against the live model schemas on Replicate
+describe("schema-driven pricing details", () => {
+  it("Seedance counts reference_videos (a list) as video input", () => {
+    expect(cost(MODEL_IDS.SEEDANCE_2, { duration: 5, reference_videos: ["https://v"] })).toBeCloseTo(1.1);
+    expect(cost(MODEL_IDS.SEEDANCE_2, { duration: 5, reference_videos: [] })).toBeCloseTo(0.9);
+    expect(cost(MODEL_IDS.SEEDANCE_25, { duration: 5, reference_videos: ["https://v"] })).toBeCloseTo(4.838);
+  });
+
+  it("GPT Image bills every image", () => {
+    expect(cost(MODEL_IDS.GPT_IMAGE_25_SUNBURST, { quality: "low", number_of_images: 4 })).toBeCloseTo(0.048);
+    expect(
+      calculateReplicateCost(
+        MODEL_IDS.GPT_IMAGE_25_SUNBURST,
+        ok({ quality: "high", number_of_images: 4 }, { output: ["a", "b", "c"] })
+      )
+    ).toBeCloseTo(0.384);
+    expect(cost(MODEL_IDS.GPT_IMAGE_25_SUNBURST, { quality: "unknown-tier" })).toBe(0.25);
+  });
+
+  it("Kling defaults to the model's own default mode (pro)", () => {
+    expect(cost(MODEL_IDS.KLING_V3_OMNI, { duration: 5 })).toBeCloseTo(1.12);
+    expect(cost(MODEL_IDS.KLING_V3_OMNI, { duration: 5, mode: "standard" })).toBeCloseTo(0.84);
   });
 });

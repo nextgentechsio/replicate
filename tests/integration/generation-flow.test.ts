@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   api,
+  baseUrl,
   closeDb,
   createProject,
   createUser,
@@ -81,7 +82,57 @@ describe("generate → poll → expense", () => {
 
     const saved = await (await db()).collection("generations").findOne({ _id: id as never });
     expect(saved).toMatchObject({ status: "succeeded", costUsd: 0.151, predictTime: 4.2 });
-    expect(saved?.localOutputUrl).toMatch(/^\/history\/test-.*\.png$/);
+    expect(saved?.localOutputUrl).toBe(`/api/generations/${id}/output`);
+  });
+
+  it("serves the saved output to its owner and managers only", async () => {
+    const id = await startGeneration(user.session, project.name);
+    await setPrediction(id, { status: "succeeded", output: [fakeOutputUrl()] });
+    await poll(user.session, id);
+
+    const original = new Uint8Array(await (await fetch(fakeOutputUrl())).arrayBuffer());
+    const url = `${baseUrl}/api/generations/${id}/output`;
+
+    const owner = await fetch(url, { headers: { cookie: user.session.cookie } });
+    expect(owner.status).toBe(200);
+    expect(owner.headers.get("content-type")).toBe("image/png");
+    expect(owner.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(new Uint8Array(await owner.arrayBuffer())).toEqual(original);
+
+    const other = await createUser(root, "user");
+    expect((await fetch(url, { headers: { cookie: other.session.cookie } })).status).toBe(404);
+    expect((await fetch(url, { headers: { cookie: root.cookie } })).status).toBe(200);
+    expect((await fetch(url)).status).toBe(401);
+
+    // Byte ranges (video seeking, Safari playback)
+    const partial = await fetch(url, {
+      headers: { cookie: user.session.cookie, range: "bytes=2-5" },
+    });
+    expect(partial.status).toBe(206);
+    expect(partial.headers.get("content-range")).toBe(`bytes 2-5/${original.length}`);
+    expect(new Uint8Array(await partial.arrayBuffer())).toEqual(original.slice(2, 6));
+
+    const tail = await fetch(url, { headers: { cookie: user.session.cookie, range: "bytes=-3" } });
+    expect(new Uint8Array(await tail.arrayBuffer())).toEqual(original.slice(-3));
+
+    const beyond = await fetch(url, {
+      headers: { cookie: user.session.cookie, range: `bytes=${original.length + 10}-` },
+    });
+    expect(beyond.status).toBe(416);
+  });
+
+  it("plain users run approved models only; admins can run any", async () => {
+    const asUser = await api("/api/generate", {
+      session: user.session,
+      json: { project: project.name, model: "someone/unlisted", inputs: { prompt: "x" } },
+    });
+    expect(asUser.status).toBe(403);
+
+    const asRoot = await api("/api/generate", {
+      session: root,
+      json: { project: project.name, model: "someone/unlisted", inputs: { prompt: "x" } },
+    });
+    expect(asRoot.status).toBe(200);
   });
 
   it("never lets a stale 'processing' answer undo a finished run", async () => {
@@ -195,7 +246,7 @@ describe("generate validation", () => {
       project: project.name,
       model: "fake/reject",
       inputs: { prompt: "x" },
-    });
+    }, root);
     expect(rejected.status).toBe(422);
     expect(rejected.data.error).toMatch(/seed must be an integer/);
 
@@ -203,19 +254,19 @@ describe("generate validation", () => {
       project: project.name,
       model: "fake/badtoken",
       inputs: { prompt: "x" },
-    });
+    }, root);
     expect(badToken.status).toBe(502);
 
     const missing = await generate({
       project: project.name,
       model: "fake/missing",
       inputs: { prompt: "x" },
-    });
+    }, root);
     expect(missing.status).toBe(404);
   });
 
   it("shapes inputs to the model's schema before sending", async () => {
-    await startGeneration(user.session, project.name, "fake/shaping", {
+    await startGeneration(root, project.name, "fake/shaping", {
       prompt: "x",
       image: ["https://replicate.delivery/a.png"],
       image_input: "https://replicate.delivery/b.png",

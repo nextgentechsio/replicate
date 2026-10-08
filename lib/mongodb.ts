@@ -84,7 +84,13 @@ export type GenerationDoc = {
   costUsd: number | null;
   // Replicate's URL (expires) and our saved copy
   outputUrl: string | null;
+  // URL of our saved copy: /api/generations/<id>/output
+  // (older records: /history/<file> in public/)
   localOutputUrl: string | null;
+  // The saved copy in GridFS "generationOutputs"
+  outputFileId?: ObjectId | null;
+  outputContentType?: string | null;
+  outputSize?: number | null;
   predictTime: number | null;
   // Reconcile attempts that found no prediction
   reconcileFailures?: number;
@@ -208,6 +214,13 @@ export async function expensesCollection(): Promise<
 export async function projectImagesBucket(): Promise<GridFSBucket> {
   return new GridFSBucket(await getDb(), {
     bucketName: "projectImages",
+  });
+}
+
+// Saved copies of finished runs' outputs
+export async function generationOutputsBucket(): Promise<GridFSBucket> {
+  return new GridFSBucket(await getDb(), {
+    bucketName: "generationOutputs",
   });
 }
 

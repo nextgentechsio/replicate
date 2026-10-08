@@ -1,6 +1,10 @@
-import fs from "fs/promises";
-import path from "path";
 import { recordExpense } from "@/lib/expenses";
+import {
+  deleteOutputFile,
+  outputUrlFor,
+  saveOutput,
+  type SavedOutput,
+} from "@/lib/generation-outputs";
 import { currentNames } from "@/lib/names";
 import type { Filter } from "mongodb";
 import {
@@ -59,6 +63,9 @@ export type PublicGeneration = {
   costUsd: number | null;
   // Saved copy when available (Replicate URLs expire)
   outputUrl: string | null;
+  // e.g. "video/mp4" for saved copies (their URL has no
+  // file extension to go by)
+  outputContentType: string | null;
   replicateOutputUrl: string | null;
   predictTime: number | null;
   createdAt: string;
@@ -84,6 +91,7 @@ function toPublicGeneration(
     error: doc.error,
     costUsd: doc.costUsd,
     outputUrl: doc.localOutputUrl ?? doc.outputUrl,
+    outputContentType: doc.outputContentType ?? null,
     replicateOutputUrl: doc.outputUrl,
     predictTime: doc.predictTime,
     createdAt: doc.createdAt.toISOString(),
@@ -374,80 +382,6 @@ export async function fetchPrediction(
   return { ok: true, prediction: data };
 }
 
-async function saveReplicateOutput(
-  output: unknown,
-  predictionId: string
-): Promise<string | null> {
-  const outputUrl = firstUrl(output);
-
-  if (!outputUrl) return null;
-
-  try {
-    const response = await fetch(outputUrl);
-
-    if (!response.ok) {
-      console.error(
-        "Failed to download Replicate output:",
-        response.status
-      );
-      return null;
-    }
-
-    const contentType =
-      response.headers.get("content-type") || "";
-
-    let extension = ".bin";
-
-    if (contentType.includes("image/png")) {
-      extension = ".png";
-    } else if (contentType.includes("image/jpeg")) {
-      extension = ".jpg";
-    } else if (contentType.includes("image/webp")) {
-      extension = ".webp";
-    } else if (contentType.includes("video/mp4")) {
-      extension = ".mp4";
-    } else if (contentType.includes("video/webm")) {
-      extension = ".webm";
-    }
-
-    const historyDir = path.join(
-      process.cwd(),
-      "public",
-      "history"
-    );
-
-    await fs.mkdir(historyDir, { recursive: true });
-
-    const fileName = `${predictionId}${extension}`;
-    const filePath = path.join(historyDir, fileName);
-
-    // Don't download the same output again
-    try {
-      await fs.access(filePath);
-      return `/history/${fileName}`;
-    } catch {
-      // File doesn't exist, continue
-    }
-
-    const buffer = Buffer.from(
-      await response.arrayBuffer()
-    );
-
-    await fs.writeFile(filePath, buffer);
-
-    console.log("REPLICATE OUTPUT SAVED:", filePath);
-
-    return `/history/${fileName}`;
-  } catch (error) {
-    console.error(
-      "Failed to save Replicate output:",
-      error
-    );
-
-    return null;
-  }
-}
-
 // Store what Replicate told us about a prediction.
 // Cost is computed from the model stored at creation,
 // never from anything the client sends.
@@ -491,6 +425,7 @@ export async function applyPrediction(
 
   let costUsd: number | null = null;
   let localOutputUrl: string | null = null;
+  let saved: SavedOutput | null = null;
 
   if (terminal) {
     try {
@@ -507,11 +442,11 @@ export async function applyPrediction(
       console.error("Cost calculation error:", costError);
     }
 
-    if (status === "succeeded" && prediction.output) {
-      localOutputUrl = await saveReplicateOutput(
-        prediction.output,
-        generation._id
-      );
+    const replicateUrl = firstUrl(prediction.output);
+
+    if (status === "succeeded" && replicateUrl) {
+      saved = await saveOutput(generation._id, replicateUrl);
+      localOutputUrl = saved ? outputUrlFor(generation._id) : null;
     }
 
     const metrics = prediction.metrics as
@@ -521,6 +456,9 @@ export async function applyPrediction(
     set.costUsd = costUsd;
     set.outputUrl = firstUrl(prediction.output);
     set.localOutputUrl = localOutputUrl;
+    set.outputFileId = saved?.fileId ?? null;
+    set.outputContentType = saved?.contentType ?? null;
+    set.outputSize = saved?.size ?? null;
     set.error =
       typeof prediction.error === "string"
         ? prediction.error.slice(0, 2000)
@@ -541,6 +479,9 @@ export async function applyPrediction(
   );
 
   if (!updated) {
+    // Another request finished it first; its copy wins
+    await deleteOutputFile(saved?.fileId);
+
     const current = await getGeneration(generation._id);
 
     return {

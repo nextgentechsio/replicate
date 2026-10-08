@@ -36,6 +36,7 @@ export default function GenerationCard({
       <div className="relative aspect-square overflow-hidden bg-sunken">
         <OutputPreview
           url={generation.outputUrl}
+          contentType={generation.outputContentType}
           status={status}
           variant="thumb"
         />

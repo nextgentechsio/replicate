@@ -72,7 +72,7 @@ describe("applyPrediction under concurrency", () => {
 
     await lib.applyPrediction(staleCopy, {
       status: "succeeded",
-      output: ["https://replicate.delivery/x/out.png"],
+      output: [`${inject("replicateUrl")}/__control/output.png`],
     });
 
     // The slower request lands afterwards with old news
@@ -84,14 +84,22 @@ describe("applyPrediction under concurrency", () => {
     });
   });
 
-  it("two finishing writes bill exactly once", async () => {
+  it("two finishing writes bill once and keep one saved copy", async () => {
     const staleCopy = await insertRunning();
+    const output = [`${inject("replicateUrl")}/__control/output.png`];
 
     await Promise.all([
-      lib.applyPrediction(staleCopy, { status: "succeeded", output: [] }),
-      lib.applyPrediction(staleCopy, { status: "succeeded", output: [] }),
-      lib.applyPrediction(staleCopy, { status: "succeeded", output: [] }),
+      lib.applyPrediction(staleCopy, { status: "succeeded", output }),
+      lib.applyPrediction(staleCopy, { status: "succeeded", output }),
+      lib.applyPrediction(staleCopy, { status: "succeeded", output }),
     ]);
+
+    // The losers' copies are deleted, not orphaned
+    const files = await (await mongo.generationOutputsBucket())
+      .find({ filename: staleCopy._id })
+      .toArray();
+    expect(files).toHaveLength(1);
+    expect((await read(staleCopy._id))?.outputFileId).toEqual(files[0]._id);
 
     const expenses = await (await mongo.expensesCollection())
       .find({ _id: staleCopy._id })
