@@ -1,3 +1,5 @@
+import { goToSignIn } from "@/lib/client/session-ended";
+
 // --------------------------------------------------
 // FETCH HELPER (browser only)
 //
@@ -30,14 +32,7 @@ export async function fetchJson<T = Record<string, unknown>>(
   }
 
   if (response.status === 401) {
-    const here = window.location.pathname + window.location.search;
-
-    // Full reload on purpose: the session is gone, so no
-    // client state should survive
-    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.assign(
-      `/login?next=${encodeURIComponent(here)}`
-    );
+    goToSignIn((data as { code?: unknown }).code);
 
     throw new Error("Your session has ended. Please sign in again.");
   }

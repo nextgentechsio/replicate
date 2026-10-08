@@ -23,6 +23,10 @@ export type UserDoc = {
   disabled: boolean;
   passwordHash: string;
   sessionVersion: number;
+  // Why the last session version bump happened, so an
+  // ended session can say why: a new sign-in elsewhere
+  // (one session per account) or a password change
+  sessionEndReason?: "signin" | "password";
   // Presence (see lib/presence.ts)
   lastSeenAt?: Date | null;
   signedOutAt?: Date | null;

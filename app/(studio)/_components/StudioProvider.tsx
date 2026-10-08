@@ -9,6 +9,7 @@ import {
 } from "react";
 import { fetchActiveProjects } from "@/lib/client/data";
 import { errorMessage } from "@/lib/client/http";
+import { goToSignIn } from "@/lib/client/session-ended";
 import { HEARTBEAT_MS } from "@/lib/presence";
 import type { PublicProject, PublicUser } from "@/lib/roles";
 
@@ -62,11 +63,21 @@ export function StudioProvider({
   // Presence heartbeat while this tab is visible, so the
   // super admin can see who's online (lib/presence.ts)
   useEffect(() => {
+    // Also notices, within a minute, that this session
+    // ended (signed in elsewhere, disabled, password reset)
     const beat = () => {
       if (document.visibilityState !== "visible") return;
-      fetch("/api/presence", { method: "POST", keepalive: true }).catch(() => {
-        // Offline for a moment: the next beat will do
-      });
+
+      fetch("/api/presence", { method: "POST", keepalive: true })
+        .then(async (response) => {
+          if (response.status !== 401) return;
+
+          const data = await response.json().catch(() => ({}));
+          goToSignIn((data as { code?: unknown }).code);
+        })
+        .catch(() => {
+          // Offline for a moment: the next beat will do
+        });
     };
 
     beat();

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser, getSessionStartedAt } from "@/lib/auth";
+import { getSession, getSessionStartedAt } from "@/lib/auth";
 import { toPublicUser } from "@/lib/users";
 import { GenerateProvider } from "./_components/GenerateProvider";
 import StudioShell from "./_components/StudioShell";
@@ -21,11 +21,13 @@ export default async function StudioLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getCurrentUser();
-
+  const { user, replaced } = await getSession();
   const sessionStartedAt = await getSessionStartedAt();
 
-  if (!user || sessionStartedAt === null) redirect("/login");
+  // The cookie is genuine but the session is over: say
+  // why (the login page clears the dead cookie)
+  if (replaced) redirect("/login?reason=replaced");
+  if (!user || sessionStartedAt === null) redirect("/login?reason=ended");
 
   return (
     <StudioProvider

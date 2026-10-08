@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { SESSION_REPLACED } from "@/lib/client/session-ended";
 import type { Role } from "@/lib/roles";
 import {
   SESSION_COOKIE,
@@ -19,26 +20,38 @@ import {
 // session wasn't revoked — call it in every route handler.
 // --------------------------------------------------
 
-export async function getCurrentUser(): Promise<StoredUser | null> {
+// `replaced`: a valid cookie for an active account whose
+// session was superseded by a sign-in on another device
+// (one session per account). Other endings (password
+// changed, disabled) just read as "ended".
+export async function getSession(): Promise<{
+  user: StoredUser | null;
+  replaced: boolean;
+}> {
   const cookieStore = await cookies();
 
   const payload = verifySessionToken(
     cookieStore.get(SESSION_COOKIE)?.value
   );
 
-  if (!payload) return null;
+  if (!payload) return { user: null, replaced: false };
 
   const user = await findUserById(payload.uid);
 
-  if (
-    !user ||
-    user.disabled ||
-    user.sessionVersion !== payload.ver
-  ) {
-    return null;
+  if (!user || user.disabled) return { user: null, replaced: false };
+
+  if (user.sessionVersion !== payload.ver) {
+    return {
+      user: null,
+      replaced: user.sessionEndReason !== "password",
+    };
   }
 
-  return user;
+  return { user, replaced: false };
+}
+
+export async function getCurrentUser(): Promise<StoredUser | null> {
+  return (await getSession()).user;
 }
 
 type AuthResult =
@@ -48,12 +61,17 @@ type AuthResult =
 export async function requireUser(
   roles?: Role[]
 ): Promise<AuthResult> {
-  const user = await getCurrentUser();
+  const { user, replaced } = await getSession();
 
   if (!user) {
     return {
       response: NextResponse.json(
-        { error: "Not signed in" },
+        replaced
+          ? {
+              error: "You were signed out because your account signed in on another device.",
+              code: SESSION_REPLACED,
+            }
+          : { error: "Not signed in" },
         { status: 401 }
       ),
     };

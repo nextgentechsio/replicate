@@ -40,6 +40,7 @@ const scrypt = promisify(scryptCallback) as (
 export type StoredUser = PublicUser & {
   passwordHash: string;
   sessionVersion: number;
+  sessionEndReason?: "signin" | "password";
 };
 
 function fromDoc(doc: UserDoc): StoredUser {
@@ -53,6 +54,7 @@ function fromDoc(doc: UserDoc): StoredUser {
     updatedAt: doc.updatedAt.toISOString(),
     passwordHash: doc.passwordHash,
     sessionVersion: doc.sessionVersion,
+    sessionEndReason: doc.sessionEndReason,
   };
 }
 
@@ -520,6 +522,7 @@ export async function updateUser(
     set.passwordHash = await hashPassword(
       patch.password as string
     );
+    set.sessionEndReason = "password";
     revokeSessions = true;
   }
 
@@ -570,4 +573,21 @@ export async function deleteUser(
   await users.deleteOne({ _id: id });
 
   return { ok: true, user: toPublicUser(target) };
+}
+
+// One session per account: every sign-in moves the
+// session version on, so cookies issued earlier (other
+// devices, other browsers) stop working. Returns the
+// version to put in the new cookie. Concurrent sign-ins
+// each get their own version; the last one wins.
+export async function startNewSession(userId: string): Promise<number> {
+  const updated = await (await getUsers()).findOneAndUpdate(
+    { _id: userId },
+    { $inc: { sessionVersion: 1 }, $set: { sessionEndReason: "signin" } },
+    { returnDocument: "after", projection: { sessionVersion: 1 } }
+  );
+
+  if (!updated) throw new Error("User disappeared during sign-in");
+
+  return updated.sessionVersion;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import ThemeToggle from "@/app/components/ThemeToggle";
 import { NaarLogo } from "@/app/components/ui/NaarLogo";
 import { safeNextPath } from "@/lib/safe-next";
@@ -13,7 +13,14 @@ import {
   Spinner,
 } from "@/app/components/ui/primitives";
 
+// Why the user landed here (?reason=), read in the
+// browser only so the static page needs no Suspense
+const noop = () => () => {};
+const readReason = () =>
+  new URLSearchParams(window.location.search).get("reason");
+
 export default function LoginPage() {
+  const reason = useSyncExternalStore(noop, readReason, () => null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -144,6 +151,19 @@ export default function LoginPage() {
                 />
               )}
             </Field>
+
+            {reason === "replaced" && !error && (
+              <Alert tone="warning">
+                You were signed out because your account signed in on
+                another device. Only one session per account is allowed.
+              </Alert>
+            )}
+
+            {reason === "ended" && !error && (
+              <Alert tone="warning">
+                Your session has ended. Please sign in again.
+              </Alert>
+            )}
 
             {error && <Alert>{error}</Alert>}
 

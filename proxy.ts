@@ -38,8 +38,19 @@ export function proxy(request: NextRequest) {
   );
 
   if (PUBLIC_PATHS.has(pathname)) {
-    // Already signed in: skip the login page
     if (session && pathname === "/login") {
+      // The app found this session ended (signed in on
+      // another device, disabled, password reset) and
+      // sent us here with a reason. The cookie still has
+      // a valid signature, so drop it, or "/login → / →
+      // /login" would loop forever.
+      if (request.nextUrl.searchParams.has("reason")) {
+        const response = NextResponse.next();
+        response.cookies.delete(SESSION_COOKIE);
+        return response;
+      }
+
+      // Already signed in: skip the login page
       return NextResponse.redirect(
         new URL("/", request.url)
       );

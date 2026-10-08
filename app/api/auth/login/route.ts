@@ -8,6 +8,7 @@ import {
 import { loginThrottle } from "@/lib/login-throttle";
 import {
   hasAnyUsers,
+  startNewSession,
   toPublicUser,
   verifyCredentials,
 } from "@/lib/users";
@@ -66,6 +67,10 @@ export async function POST(request: Request) {
 
     loginThrottle.succeeded(key);
 
+    // One session per account: this sign-in ends any
+    // other device's session
+    const sessionVersion = await startNewSession(user.id);
+
     const response = NextResponse.json({
       success: true,
       user: toPublicUser(user),
@@ -73,7 +78,7 @@ export async function POST(request: Request) {
 
     response.cookies.set(
       SESSION_COOKIE,
-      createSessionToken(user.id, user.sessionVersion),
+      createSessionToken(user.id, sessionVersion),
       {
         httpOnly: true,
         sameSite: "lax",
