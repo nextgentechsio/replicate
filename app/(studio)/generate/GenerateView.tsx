@@ -411,7 +411,9 @@ export default function GenerateView() {
                             <li key={item.id}>
                               <button
                                 type="button"
-                                onClick={() => chooseModel(item.id, true)}
+                                onClick={() =>
+                                  chooseModel(item.id, { fromSearch: true })
+                                }
                                 className="block w-full px-3.5 py-3 text-left transition-colors hover:bg-raised"
                               >
                                 <span className="flex items-center justify-between gap-2">

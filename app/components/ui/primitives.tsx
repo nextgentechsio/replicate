@@ -60,7 +60,7 @@ export function Button({
   className = "",
   children,
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+}: React.ComponentPropsWithRef<"button"> & {
   variant?: ButtonVariant;
   size?: keyof typeof BUTTON_SIZES;
   icon?: IconName;

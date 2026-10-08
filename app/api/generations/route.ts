@@ -1,16 +1,21 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import {
+  HISTORY_STATUSES,
   listGenerations,
   reconcilePending,
+  type HistoryStatus,
 } from "@/lib/generations";
 
 export const runtime = "nodejs";
 
-// Generation history for the signed-in user.
-// Users get their own records; admins and the super
-// admin get everyone's.
-export async function GET() {
+// Generation history for the signed-in user, one page
+// at a time. Users get their own records; admins and
+// the super admin get everyone's.
+//
+// ?page=1&pageSize=24&project=<id>&user=<id>
+// &model=<owner/name>&status=succeeded|failed|running&q=<text>
+export async function GET(request: Request) {
   const auth = await requireUser();
   if (auth.response) return auth.response;
 
@@ -26,9 +31,22 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json({
-      generations: await listGenerations(auth.user),
-    });
+    const params = new URL(request.url).searchParams;
+    const status = params.get("status");
+
+    return NextResponse.json(
+      await listGenerations(auth.user, {
+        page: Number(params.get("page")) || 1,
+        pageSize: Number(params.get("pageSize")) || 24,
+        projectId: params.get("project") || undefined,
+        userId: params.get("user") || undefined,
+        model: params.get("model") || undefined,
+        status: HISTORY_STATUSES.includes(status as HistoryStatus)
+          ? (status as HistoryStatus)
+          : undefined,
+        q: params.get("q") || undefined,
+      })
+    );
   } catch (error) {
     console.error("List generations error:", error);
 

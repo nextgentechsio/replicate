@@ -116,3 +116,9 @@ export function findCatalogModel(
 ): CatalogModel | undefined {
   return MODEL_CATALOG.find((model) => model.id === id);
 }
+
+// Friendly name for display ("Nano Banana"); models
+// outside the catalog keep their Replicate id
+export function modelLabel(id: string): string {
+  return findCatalogModel(id)?.label ?? id;
+}

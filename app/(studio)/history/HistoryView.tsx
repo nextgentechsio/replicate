@@ -1,152 +1,334 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { useStudio } from "@/app/(studio)/_components/StudioProvider";
-import { useApiData } from "@/app/(studio)/_components/useApiData";
-import { Alert } from "@/app/components/ui/primitives";
-import { fetchGenerations } from "@/lib/client/data";
+import { Icon } from "@/app/components/ui/Icon";
+import {
+  Alert,
+  Button,
+  buttonClass,
+  cx,
+  EmptyState,
+  PageHeader,
+} from "@/app/components/ui/primitives";
+import {
+  fetchHistoryPage,
+  type HistoryPage,
+  type HistoryStatus,
+} from "@/lib/client/data";
 import { errorMessage } from "@/lib/client/http";
-import { downloadOutput, getOutputType } from "@/lib/client/outputs";
 import { canManageUsers } from "@/lib/roles";
+import GenerationCard, { GenerationCardSkeleton } from "./GenerationCard";
+import GenerationDrawer from "./GenerationDrawer";
+import HistoryFilters, { type FilterValues } from "./HistoryFilters";
+import { isRunningStatus } from "./OutputPreview";
 
 // --------------------------------------------------
-// HISTORY PAGE
+// HISTORY
 //
-// Loading /api/generations also finishes runs whose tab
-// closed mid-way (server-side reconcile).
+// A paged, filterable grid. Filters, page and the open
+// generation (?view=<id>) live in the URL, so any view
+// can be refreshed, shared or left with Back.
 // --------------------------------------------------
+
+const PAGE_SIZE = 24;
+const RUNNING_REFRESH_MS = 5000;
+const STATUSES: HistoryStatus[] = ["succeeded", "failed", "running"];
+
+// 4 columns on a laptop, 5 on wide screens: enough to
+// scan, big enough to judge an image
+const GRID_CLASS =
+  "grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5";
+
+const FILTER_KEYS = ["q", "project", "model", "user", "status"] as const;
+
+function readFilters(params: URLSearchParams): FilterValues {
+  const status = params.get("status") as HistoryStatus | null;
+
+  return {
+    q: params.get("q") ?? "",
+    project: params.get("project") ?? "",
+    model: params.get("model") ?? "",
+    user: params.get("user") ?? "",
+    status: status && STATUSES.includes(status) ? status : "",
+  };
+}
 
 export default function HistoryView() {
   const { currentUser } = useStudio();
+  const isManager = canManageUsers(currentUser);
 
-  const { data, error, loading } = useApiData(
-    fetchGenerations,
-    "Unable to load history."
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const filters = readFilters(searchParams);
+  const page = Math.max(1, Number(searchParams.get("page")) || 1);
+  const viewId = searchParams.get("view");
+
+  // What the API is asked for (the open drawer doesn't
+  // change the list)
+  const listParams = new URLSearchParams();
+  for (const key of FILTER_KEYS) {
+    if (filters[key]) listParams.set(key, filters[key]);
+  }
+  listParams.set("page", String(page));
+  const listKey = listParams.toString();
+
+  // ---------- URL updates ----------
+
+  const updateUrl = useCallback(
+    (patch: Record<string, string | null>, mode: "push" | "replace") => {
+      const next = new URLSearchParams(searchParams.toString());
+
+      for (const [key, value] of Object.entries(patch)) {
+        if (value) next.set(key, value);
+        else next.delete(key);
+      }
+
+      const query = next.toString();
+      const url = query ? `${pathname}?${query}` : pathname;
+
+      if (mode === "push") router.push(url, { scroll: false });
+      else router.replace(url, { scroll: false });
+    },
+    [pathname, router, searchParams],
   );
 
-  const [downloadError, setDownloadError] = useState("");
+  // Filter changes go back to page 1 and replace the
+  // history entry (typing shouldn't fill the Back stack)
+  const changeFilters = useCallback(
+    (patch: Partial<FilterValues>) =>
+      updateUrl({ ...patch, page: null }, "replace"),
+    [updateUrl],
+  );
 
-  const history = data ?? [];
+  const clearFilters = () =>
+    updateUrl(
+      {
+        q: null,
+        project: null,
+        model: null,
+        user: null,
+        status: null,
+        page: null,
+      },
+      "replace",
+    );
 
-  function download(url: string, predictionId: string) {
-    setDownloadError("");
+  const goToPage = (next: number) => {
+    updateUrl({ page: next > 1 ? String(next) : null }, "push");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
-    downloadOutput(url, `generation-${predictionId}`).catch((err) => {
-      console.error("DOWNLOAD ERROR:", err);
-      setDownloadError(errorMessage(err, "Download failed"));
-    });
-  }
+  const openGeneration = (id: string) => updateUrl({ view: id }, "push");
+  const closeGeneration = useCallback(
+    () => updateUrl({ view: null }, "replace"),
+    [updateUrl],
+  );
+
+  // ---------- Data ----------
+
+  const [result, setResult] = useState<{
+    key: string;
+    data?: HistoryPage;
+    error?: string;
+  }>({ key: "" });
+
+  // Bumped to re-fetch while generations are running
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams(listKey);
+
+    fetchHistoryPage({
+      page: Number(params.get("page")) || 1,
+      pageSize: PAGE_SIZE,
+      q: params.get("q") ?? undefined,
+      project: params.get("project") ?? undefined,
+      model: params.get("model") ?? undefined,
+      user: params.get("user") ?? undefined,
+      status: (params.get("status") as HistoryStatus) ?? undefined,
+    })
+      .then((data) => {
+        if (!cancelled) setResult({ key: listKey, data });
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setResult((previous) => ({
+            key: listKey,
+            // Keep showing the last good page
+            data: previous.data,
+            error: errorMessage(err, "Unable to load history."),
+          }));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [listKey, refreshTick]);
+
+  const data = result.data;
+  const loading = result.key !== listKey;
+  const generations = data?.generations ?? [];
+
+  // Keep running generations fresh without a manual reload
+  const hasRunning = generations.some((item) => isRunningStatus(item.status));
+
+  useEffect(() => {
+    if (!hasRunning) return;
+
+    const timer = setTimeout(
+      () => setRefreshTick((tick) => tick + 1),
+      RUNNING_REFRESH_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [hasRunning, result]);
+
+  // ---------- Derived ----------
+
+  const total = data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const first = total ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const last = Math.min(page * PAGE_SIZE, total);
+  const filtered = FILTER_KEYS.some((key) => filters[key]);
+
+  const description = isManager
+    ? "Every generation across the workspace."
+    : "Your generations.";
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.2em] text-fg-subtle">
-          Library
+      <PageHeader eyebrow="Library" title="History" description={description} />
+
+      <HistoryFilters
+        values={filters}
+        options={data?.options}
+        showUser={isManager}
+        onChange={changeFilters}
+        onClear={clearFilters}
+      />
+
+      {result.error && result.key === listKey && <Alert>{result.error}</Alert>}
+
+      {/* Count + pagination summary */}
+      {data && total > 0 && (
+        <p className="text-sm text-fg-muted" aria-live="polite">
+          Showing{" "}
+          <span className="font-medium text-fg">
+            {first}–{last}
+          </span>{" "}
+          of <span className="font-medium text-fg">{total}</span>
+          {filtered ? " matching" : ""} generation{total === 1 ? "" : "s"}
         </p>
+      )}
 
-        <h1 className="text-[28px] font-bold leading-tight tracking-[-0.02em] text-fg sm:text-[32px]">
-          Generation History
-        </h1>
-
-        <p className="mt-1 text-sm text-fg-muted">
-          {canManageUsers(currentUser)
-            ? "Every generation across the workspace."
-            : "Your generations."}
-        </p>
-      </div>
-
-      {(error || downloadError) && <Alert>{error || downloadError}</Alert>}
-
-      <div className="overflow-hidden rounded-2xl border border-line bg-surface">
-        {loading ? (
-          <div className="p-12 text-center text-sm text-fg-subtle">
-            Loading history...
-          </div>
-        ) : !history.length ? (
-          <div className="p-12 text-center text-sm text-fg-subtle">
-            No generation history yet.
-          </div>
-        ) : (
-          <div className="divide-y divide-line">
-            {history.map((item) => (
-              <div
-                key={item.id}
-                className="grid gap-4 p-5 md:grid-cols-[120px_1fr_auto]"
-              >
-                <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-xl bg-black">
-                  {item.outputUrl ? (
-                    getOutputType(item.outputUrl) === "video" ? (
-                      <video
-                        src={item.outputUrl}
-                        className="h-full w-full object-cover"
-                        controls
-                        muted
-                        playsInline
-                      />
-                    ) : (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={item.outputUrl}
-                        alt="Generated output"
-                        className="h-full w-full object-cover"
-                      />
-                    )
-                  ) : (
-                    <span className="text-xs text-fg-subtle">
-                      {item.status === "succeeded" ? "No image" : item.status}
-                    </span>
-                  )}
-                </div>
-
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-fg">
-                    {item.model}
-                  </p>
-
-                  <p className="mt-1 text-xs text-fg-muted">
-                    {item.project} · {item.user}
-                  </p>
-
-                  <p className="mt-3 line-clamp-2 text-sm text-fg-muted">
-                    {item.prompt || "No prompt"}
-                  </p>
-
-                  <p className="mt-3 text-[11px] text-fg-subtle">
-                    {new Date(item.createdAt).toLocaleString()} ·{" "}
-                    {item.predictionId}
-                  </p>
-                </div>
-
-                <div className="flex min-w-28 flex-col items-end justify-between gap-3">
-                  <div className="text-right">
-                    <p className="text-sm text-fg">
-                      {item.costUsd == null
-                        ? "—"
-                        : `$${item.costUsd.toFixed(4)}`}
-                    </p>
-
-                    <p className="mt-1 text-[10px] uppercase text-fg-subtle">
-                      {item.status}
-                    </p>
-                  </div>
-
-                  {item.outputUrl && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        download(item.outputUrl!, item.predictionId)
-                      }
-                      className="rounded-lg border border-line-strong px-3 py-2 text-xs text-fg hover:bg-raised"
-                    >
-                      Download
-                    </button>
-                  )}
-                </div>
-              </div>
+      {!data ? (
+        loading ? (
+          <div className={GRID_CLASS}>
+            {Array.from({ length: 8 }, (_, index) => (
+              <GenerationCardSkeleton key={index} />
             ))}
           </div>
-        )}
-      </div>
+        ) : null
+      ) : !generations.length ? (
+        <div className="rounded-xl border border-line bg-surface">
+          {filtered ? (
+            <EmptyState
+              icon="search"
+              title="No generations match these filters"
+              description="Try a different search, or clear the filters."
+              action={
+                <Button size="sm" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              }
+            />
+          ) : page > 1 ? (
+            <EmptyState
+              icon="history"
+              title="This page is empty"
+              action={
+                <Button size="sm" onClick={() => goToPage(1)}>
+                  Back to page 1
+                </Button>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon="image"
+              title="Nothing generated yet"
+              description="Every run you start is saved here, with its cost."
+              action={
+                <Link href="/generate" className={buttonClass("primary", "sm")}>
+                  Start generating
+                </Link>
+              }
+            />
+          )}
+        </div>
+      ) : (
+        <div
+          className={cx(
+            GRID_CLASS,
+            "transition-opacity",
+            loading && "opacity-60",
+          )}
+          aria-busy={loading}
+        >
+          {generations.map((generation) => (
+            <GenerationCard
+              key={generation.id}
+              generation={generation}
+              showUser={isManager}
+              onOpen={() => openGeneration(generation.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {data && pageCount > 1 && (
+        <nav
+          aria-label="Pagination"
+          className="flex items-center justify-between gap-3 border-t border-line pt-4"
+        >
+          <Button
+            size="sm"
+            icon="chevronLeft"
+            disabled={page <= 1}
+            onClick={() => goToPage(page - 1)}
+          >
+            Previous
+          </Button>
+
+          <span className="text-sm text-fg-muted">
+            Page {Math.min(page, pageCount)} of {pageCount}
+          </span>
+
+          <Button
+            size="sm"
+            disabled={page >= pageCount}
+            onClick={() => goToPage(page + 1)}
+          >
+            Next
+            <Icon name="chevronRight" size={16} />
+          </Button>
+        </nav>
+      )}
+
+      {viewId && (
+        <GenerationDrawer
+          id={viewId}
+          preview={generations.find((item) => item.id === viewId)}
+          showUser={isManager}
+          onClose={closeGeneration}
+        />
+      )}
     </div>
   );
 }

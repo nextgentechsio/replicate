@@ -1,5 +1,10 @@
 import { fetchJson } from "@/lib/client/http";
 import type { ExpenseReport } from "@/lib/expenses";
+import type {
+  HistoryPage,
+  HistoryStatus,
+  PublicGeneration,
+} from "@/lib/generations";
 import type { PublicProject } from "@/lib/roles";
 
 // --------------------------------------------------
@@ -10,22 +15,24 @@ import type { PublicProject } from "@/lib/roles";
 // get the whole workspace.
 // --------------------------------------------------
 
-export type HistoryRecord = {
-  id: string;
-  predictionId: string;
-  user: string;
-  userId?: string;
-  project: string;
-  model: string;
-  prompt: string;
-  outputUrl: string | null;
-  inputImage: string | null;
-  aspectRatio: string;
-  resolution: string;
-  costUsd: number | null;
-  status: string;
-  createdAt: string;
-  predictTime?: number | null;
+export type {
+  HistoryPage,
+  HistoryStatus,
+  PublicGeneration,
+} from "@/lib/generations";
+
+export type HistoryFilters = {
+  page?: number;
+  pageSize?: number;
+  project?: string;
+  user?: string;
+  model?: string;
+  status?: HistoryStatus;
+  q?: string;
+};
+
+export type GenerationDetail = PublicGeneration & {
+  inputs: Record<string, unknown>;
 };
 
 export async function fetchActiveProjects(): Promise<PublicProject[]> {
@@ -36,12 +43,32 @@ export async function fetchActiveProjects(): Promise<PublicProject[]> {
   return data.projects ?? [];
 }
 
-export async function fetchGenerations(): Promise<HistoryRecord[]> {
-  const data = await fetchJson<{ generations?: HistoryRecord[] }>(
-    "/api/generations"
+export function historyQueryString(filters: HistoryFilters): string {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== "" && value !== null) {
+      params.set(key, String(value));
+    }
+  }
+
+  return params.toString();
+}
+
+export function fetchHistoryPage(
+  filters: HistoryFilters = {}
+): Promise<HistoryPage> {
+  return fetchJson<HistoryPage>(
+    `/api/generations?${historyQueryString(filters)}`
+  );
+}
+
+export async function fetchGeneration(id: string): Promise<GenerationDetail> {
+  const data = await fetchJson<{ generation: GenerationDetail }>(
+    `/api/generations/${encodeURIComponent(id)}`
   );
 
-  return data.generations ?? [];
+  return data.generation;
 }
 
 // Totals are aggregated on the server; we only send the

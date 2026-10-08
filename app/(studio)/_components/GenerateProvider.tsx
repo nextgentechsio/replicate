@@ -79,6 +79,20 @@ function predictionCost(
   );
 }
 
+type ChooseModelOptions = {
+  // Keeps the id in the search box, so the search
+  // doesn't re-run for the previous query
+  fromSearch?: boolean;
+  // Values to apply over the schema defaults
+  presetInputs?: Record<string, unknown>;
+};
+
+export type Draft = {
+  project: string;
+  model: string;
+  inputs: Record<string, unknown>;
+};
+
 type GenerateContextValue = {
   // Project (by name; blank until the user picks one)
   project: string;
@@ -86,9 +100,10 @@ type GenerateContextValue = {
 
   // Model
   model: string;
-  // fromSearch keeps the id in the search box, so the
-  // search doesn't re-run for the previous query
-  chooseModel: (id: string, fromSearch?: boolean) => void;
+  chooseModel: (id: string, options?: ChooseModelOptions) => void;
+  // "Run again" from History: same project, model and
+  // settings, ready to tweak and run
+  loadDraft: (draft: Draft) => void;
   catalogFilter: ModelKind | "all";
   setCatalogFilter: (filter: ModelKind | "all") => void;
   showOtherModels: boolean;
@@ -206,11 +221,11 @@ export function GenerateProvider({
   }, []);
 
   const chooseModel = useCallback(
-    (id: string, fromSearch = false) => {
+    (id: string, options: ChooseModelOptions = {}) => {
       latestModelRef.current = id;
 
       setModel(id);
-      setSearch(fromSearch ? id : "");
+      setSearch(options.fromSearch ? id : "");
       setSearchResults([]);
       setResult(null);
       setError("");
@@ -234,7 +249,14 @@ export function GenerateProvider({
           const modelSchema = data.inputSchema ?? {};
 
           setSchema(modelSchema);
-          setInputs(schemaDefaults(id, modelSchema));
+          // Presets only fill fields this model still has
+          const preset = Object.fromEntries(
+            Object.entries(options.presetInputs ?? {}).filter(
+              ([key]) => key in modelSchema
+            )
+          );
+
+          setInputs({ ...schemaDefaults(id, modelSchema), ...preset });
         })
         .catch((err) => {
           if (latestModelRef.current !== id) return;
@@ -249,6 +271,14 @@ export function GenerateProvider({
         });
     },
     [clearPreviews]
+  );
+
+  const loadDraft = useCallback(
+    (draft: Draft) => {
+      setProject(draft.project);
+      chooseModel(draft.model, { presetInputs: draft.inputs });
+    },
+    [chooseModel]
   );
 
   // --------------------------------------------------
@@ -490,6 +520,7 @@ export function GenerateProvider({
     setProject,
     model,
     chooseModel,
+    loadDraft,
     catalogFilter,
     setCatalogFilter,
     showOtherModels,

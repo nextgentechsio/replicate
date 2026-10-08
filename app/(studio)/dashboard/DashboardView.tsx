@@ -3,7 +3,22 @@
 import { useStudio } from "@/app/(studio)/_components/StudioProvider";
 import { useApiData } from "@/app/(studio)/_components/useApiData";
 import { Alert } from "@/app/components/ui/primitives";
-import { fetchExpenseReport, fetchGenerations } from "@/lib/client/data";
+import { fetchExpenseReport, fetchHistoryPage } from "@/lib/client/data";
+
+// Totals come from the paged history API: the latest 5
+// plus the overall and succeeded counts
+async function fetchDashboardHistory() {
+  const [latest, succeeded] = await Promise.all([
+    fetchHistoryPage({ pageSize: 5 }),
+    fetchHistoryPage({ pageSize: 1, status: "succeeded" }),
+  ]);
+
+  return {
+    recent: latest.generations,
+    total: latest.total,
+    succeeded: succeeded.total,
+  };
+}
 
 // --------------------------------------------------
 // DASHBOARD
@@ -16,17 +31,14 @@ function formatUsd4(amount: number | null) {
 export default function DashboardView() {
   const { projects } = useStudio();
 
-  const history = useApiData(fetchGenerations, "Unable to load history.");
+  const history = useApiData(fetchDashboardHistory, "Unable to load history.");
   const expenses = useApiData(fetchExpenseReport, "Unable to load expenses.");
 
-  const generations = history.data ?? [];
+  const generations = history.data?.recent ?? [];
   const report = expenses.data;
 
-  const total = generations.length;
-
-  const successful = generations.filter(
-    (item) => item.status === "succeeded"
-  ).length;
+  const total = history.data?.total ?? 0;
+  const successful = history.data?.succeeded ?? 0;
 
   // Spend comes from the MongoDB expense ledger
   const totalSpend = report?.totals.allTime.amountUsd ?? null;
@@ -90,7 +102,7 @@ export default function DashboardView() {
           <h2 className="font-semibold">Recent generations</h2>
 
           <div className="mt-5 space-y-3">
-            {generations.slice(0, 5).map((item) => (
+            {generations.map((item) => (
               <div
                 key={item.id}
                 className="flex items-center justify-between rounded-xl bg-sunken p-3"

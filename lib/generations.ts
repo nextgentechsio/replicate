@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { recordExpense } from "@/lib/expenses";
+import type { Filter } from "mongodb";
 import {
   generationsCollection,
   type GenerationDoc,
@@ -176,22 +177,133 @@ export async function getGeneration(
   });
 }
 
+export const HISTORY_STATUSES = [
+  "succeeded",
+  "failed",
+  "running",
+] as const;
+
+export type HistoryStatus = (typeof HISTORY_STATUSES)[number];
+
+export type HistoryQuery = {
+  page?: number;
+  pageSize?: number;
+  projectId?: string;
+  userId?: string;
+  model?: string;
+  status?: HistoryStatus;
+  // Case-insensitive match on the prompt
+  q?: string;
+};
+
+export type HistoryPage = {
+  generations: PublicGeneration[];
+  total: number;
+  page: number;
+  pageSize: number;
+  // Values that exist in what the viewer may see, for
+  // the filter dropdowns
+  options: {
+    projects: { id: string; name: string }[];
+    users: { id: string; name: string }[];
+    models: string[];
+  };
+};
+
+export const HISTORY_MAX_PAGE_SIZE = 60;
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const STATUS_FILTERS: Record<HistoryStatus, Filter<GenerationDoc>> = {
+  succeeded: { status: "succeeded" },
+  failed: { status: { $in: ["failed", "canceled"] } },
+  running: { status: { $nin: ["succeeded", "failed", "canceled"] } },
+};
+
 export async function listGenerations(
   actor: StoredUser,
-  limit = 500
-): Promise<PublicGeneration[]> {
-  // Plain users see only their own generations
-  const filter = canManageUsers(actor)
+  query: HistoryQuery = {}
+): Promise<HistoryPage> {
+  const pageSize = Math.min(
+    Math.max(1, Math.floor(query.pageSize ?? 24)),
+    HISTORY_MAX_PAGE_SIZE
+  );
+  const page = Math.max(1, Math.floor(query.page ?? 1));
+
+  // Plain users see only their own generations, so a
+  // user filter only applies to managers
+  const scope: Filter<GenerationDoc> = canManageUsers(actor)
     ? {}
     : { userId: actor.id };
 
-  const docs = await (await generationsCollection())
-    .find(filter)
-    .sort({ createdAt: -1 })
-    .limit(limit)
-    .toArray();
+  const filter: Filter<GenerationDoc> = { ...scope };
 
-  return docs.map(toPublicGeneration);
+  if (query.projectId) filter.projectId = query.projectId;
+  if (query.userId && canManageUsers(actor)) filter.userId = query.userId;
+  if (query.model) filter.model = query.model;
+  if (query.status) Object.assign(filter, STATUS_FILTERS[query.status]);
+
+  const q = query.q?.trim().slice(0, 100);
+  if (q) filter.prompt = { $regex: escapeRegex(q), $options: "i" };
+
+  const collection = await generationsCollection();
+
+  const [docs, total, projects, users, models] = await Promise.all([
+    collection
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * pageSize)
+      .limit(pageSize)
+      .toArray(),
+    collection.countDocuments(filter),
+    collection
+      .aggregate<{ _id: string; name: string }>([
+        // Newest first, so a renamed project shows its
+        // current name
+        { $match: scope },
+        { $sort: { createdAt: -1 } },
+        { $group: { _id: "$projectId", name: { $first: "$projectName" } } },
+        { $sort: { name: 1 } },
+      ])
+      .toArray(),
+    canManageUsers(actor)
+      ? collection
+          .aggregate<{ _id: string; name: string }>([
+            { $sort: { createdAt: -1 } },
+            { $group: { _id: "$userId", name: { $first: "$userName" } } },
+            { $sort: { name: 1 } },
+          ])
+          .toArray()
+      : Promise.resolve([]),
+    collection.distinct("model", scope),
+  ]);
+
+  return {
+    generations: docs.map(toPublicGeneration),
+    total,
+    page,
+    pageSize,
+    options: {
+      projects: projects.map((item) => ({ id: item._id, name: item.name })),
+      users: users.map((item) => ({ id: item._id, name: item.name })),
+      models: (models as string[]).sort(),
+    },
+  };
+}
+
+// One generation with the inputs it ran with, for
+// "Run again". Null when missing or not the viewer's.
+export async function getGenerationForViewer(
+  actor: StoredUser,
+  id: string
+): Promise<(PublicGeneration & { inputs: Record<string, unknown> }) | null> {
+  const doc = await getGeneration(id);
+
+  if (!doc || !canViewGeneration(actor, doc)) return null;
+
+  return { ...toPublicGeneration(doc), inputs: doc.inputs ?? {} };
 }
 
 // --------------------------------------------------
